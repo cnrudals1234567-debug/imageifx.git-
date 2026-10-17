@@ -10,7 +10,7 @@ PROMPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 IMPORTANCE = ("critical", "movable", "decor", "band", "drop")
 MAX_SIDE = 1024          # 에이전트에게 보여 주는 이미지의 긴 변(px). 이미지 토큰 ≈ 가로×세로÷750
 MAX_AI_OPS = 8
-ANALYZER_VERSION = "v3"   # 분석 프롬프트가 바뀌면 올려서 예전 분석 캐시를 쓰지 않게 한다
+ANALYZER_VERSION = "v4"   # 분석 프롬프트가 바뀌면 올려서 예전 분석 캐시를 쓰지 않게 한다
 EXAMPLE_FILES = ("grad_ai_english", "tesol_v2", "real1", "grad_global")   # samples/ 의 사람이 검증한 분석(스타일별 1개)
 
 

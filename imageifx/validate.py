@@ -16,6 +16,12 @@ def _zone(preset):
     return mx, my, W - mx, H - my
 
 
+def _src_touch(a, c):
+    """두 레이어의 원본 bbox가 서로 겹치는가(원본에서 한 덩어리로 놓여 있었는가)."""
+    A, B = a["src_bbox"], c["src_bbox"]
+    return not (A[2] <= B[0] or B[2] <= A[0] or A[3] <= B[1] or B[3] <= A[1])
+
+
 def check(layout, preset, out_size=None, file_kb=None):
     W, H = preset["size"]
     zl, zt, zr, zb = _zone(preset)
@@ -67,6 +73,8 @@ def check(layout, preset, out_size=None, file_kb=None):
                 continue   # bbox가 겹쳐도 되는 인물: 간격은 실루엣 기준(check_clearance)으로 검사
             if (a.get("on_band") and c.get("group") == "footer") or (c.get("on_band") and a.get("group") == "footer"):
                 continue   # 인물은 띠 윗면에 서 있고 안내 문구는 띠 안에 있어 서로 다른 층이다
+            if a["type"] != "text" and c["type"] != "text" and a["scale"] == c["scale"] and _src_touch(a, c):
+                continue   # 원본에서 이미 겹쳐 있던 피사체(인물+노트북 등)는 같은 배율이면 그 관계가 그대로 유지된다(새로 가까워진 것이 아님)
             if a["type"] == c["type"] == "text":
                 # 글자 블록끼리의 간격은 원본 디자인의 줄 간격을 축소한 값이라 실패로 단정하지 않고 정보로만 표시
                 if d < gap:
@@ -114,7 +122,11 @@ def inventory(elements, layout, preset):
         elif imp in ("critical", "movable"):
             L = by_id.get(eid)
             if not L:
-                rows.append({"id": eid, "kind": imp, "status": "LOST", "ok": False, "detail": "배치할 자리가 없어 누락"})
+                if imp == "movable" and e.get("priority") == "optional":   # 작은 소품: 자리가 없으면 경고로만 보고(조용한 손실이 아님)
+                    rows.append({"id": eid, "kind": imp, "status": "DROPPED(optional)", "ok": True, "warn": True,
+                                 "detail": "배치할 자리가 없어 뺌(optional 소품)"})
+                else:
+                    rows.append({"id": eid, "kind": imp, "status": "LOST", "ok": False, "detail": "배치할 자리가 없어 누락"})
                 continue
             v = vis(_box(L))
             bl = L.get("bleed", [])

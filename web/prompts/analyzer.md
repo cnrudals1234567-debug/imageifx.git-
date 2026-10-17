@@ -13,7 +13,7 @@
 - critical: 글자·인물·상품·로고(안전영역 규칙 대상). 글자는 줄이 아니라 의미 블록(제목/서브/칩/CTA/날짜) 단위, bbox는 글자보다 4~8px 넉넉히. 인물에 붙어 있는 소품(노트북, 책 등)은 인물 bbox에 함께 포함하고 따로 적지 않는다(따로 적으면 서로 겹쳐 간격 FAIL이 난다).
 - 안내 문구(예: *AI 활용 이미지, 하단 학과·일정 문구)는 "group":"footer". 하단에 전체 폭 띠가 있으면 importance "band"(type decor) 하나를 추가한다.
 - 인물과 글자가 겹쳐 있으면 인물에 "text_overlap_src_px":숫자(글자 쪽 빈 공간 px)를 줄 수 있다.
-- 장식(워터마크 글자, 호·원형 사진, 별, 소품 등): 스타일이 bold_solid(단색 배경)이면 importance "decor"로 두고 속성을 준다 — "anchor":"corner_tl|corner_tr|corner_bl|corner_br", "priority":"keep|optional", "overlap":"none|subject|any"(글자와 겹쳐도 되는지), "z":"back|behind_subject|front", "polarity":"light|dark|any"(배경보다 밝은/어두운 것만 복사), "fade":{"left|right|top|bottom":px}(경계를 부드럽게). 그 외 스타일은 importance "movable"(재배치할 장식)로 둔다. 받침대 위에 놓인 소품은 "stay_y":true.
+- 장식(워터마크 글자, 호·원형 사진, 별, 소품 등): 스타일이 bold_solid(단색 배경)이면 importance "decor"로 두고 속성을 준다 — "anchor":"corner_tl|corner_tr|corner_bl|corner_br", "priority":"keep|optional", "overlap":"none|subject|any"(글자와 겹쳐도 되는지), "z":"back|behind_subject|front", "polarity":"light|dark|any"(배경보다 밝은/어두운 것만 복사), "fade":{"left|right|top|bottom":px}(경계를 부드럽게). 그 외 스타일은 importance "movable"(재배치할 장식)로 둔다. 받침대 위에 놓인 소품은 "stay_y":true. 작은 소품(분필, 지우개, 별 등)은 "priority":"optional"을 줘서, 세로·정사각 사이즈에서 자리가 없으면 경고만 나게 한다(글자·인물에는 주지 않는다).
 - 의미 없는 잔 장식은 적지 않는다. 필수 요소(critical)를 drop으로 두지 않는다.
 - 파일을 쓰거나 박스를 그려 다시 확인하지 말고 한 번에 답한다.
 

@@ -115,3 +115,40 @@ def test_align_dx_keeps_side_by_side_items_together():
              _txt("d", 300, 900, 200)]
     dx = layout._align_dx(texts)
     assert dx.get("b", 0) == dx.get("c", 0), "한 줄의 요소는 같은 양만큼 움직여야 함"
+
+
+# ---------- auto_free: 띠·bleed·상단 여백 ----------
+
+def _el(i, typ, imp, bbox, **kw):
+    return {"id": i, "type": typ, "importance": imp, "bbox": bbox, **kw}
+
+
+def _square_preset():
+    return {"size": [1080, 1080], "mode": "free", "layout": "free", "safe_margin": {"x": 48, "y": 48}, "min_gap": 16,
+            "min_text_height": 22}
+
+
+def test_auto_free_places_band_and_footer_above_bottom_margin():
+    els = [_el("title", "text", "critical", [100, 0, 1100, 300]),
+           _el("woman", "subject", "critical", [300, 500, 900, 1074]),
+           _el("foot", "text", "critical", [90, 1085, 1120, 1190], group="footer"),
+           _el("band", "decor", "band", [0, 1075, 1200, 1200])]
+    lay = layout.auto_free(els, (1200, 1200), _square_preset())
+    assert lay["band"]["h"] > 0 and lay["floor"]["y"] == 1080 - lay["band"]["h"]
+    foot = next(L for L in lay["layers"] if L["id"] == "foot")
+    h = round((foot["src_bbox"][3] - foot["src_bbox"][1]) * foot["scale"])
+    assert foot["group"] == "footer" and foot["y"] >= lay["floor"]["y"] and foot["y"] + h <= 1080 - 48   # 띠 안, 하단 여백 지킴
+    woman = next(L for L in lay["layers"] if L["id"] == "woman")
+    assert woman.get("on_band") and woman["y"] + round(574 * woman["scale"]) <= lay["floor"]["y"] + 1
+    title = next(L for L in lay["layers"] if L["id"] == "title")
+    assert title["y"] >= 48   # 상단 여백(예전에는 0이라 제목이 맨 위에 붙었다)
+
+
+def test_auto_free_keeps_text_inside_bottom_margin_when_subject_bleeds():
+    els = [_el("body", "text", "critical", [600, 900, 1150, 1150]),
+           _el("person", "subject", "critical", [30, 650, 600, 1200])]   # 원본 바닥(1200)에 닿음 -> bleed
+    lay = layout.auto_free(els, (1200, 1200), _square_preset())
+    person = next(L for L in lay["layers"] if L["id"] == "person")
+    body = next(L for L in lay["layers"] if L["id"] == "body")
+    assert "bleed" in person and person["y"] + round(550 * person["scale"]) == 1080
+    assert body["y"] + round(250 * body["scale"]) <= 1080 - 48    # 글자는 하단 여백을 넘지 않는다

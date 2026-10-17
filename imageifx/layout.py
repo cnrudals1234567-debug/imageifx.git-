@@ -188,34 +188,61 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
 
 
 def _margins(preset):
-    """(좌, 상, 우, 하) 여백 px. safe_zone이 있으면 방향별 값을 쓰고, 없으면 예전 동작(좌우·하단 safe_margin.x, 상단 0)을 유지한다."""
+    """(좌, 상, 우, 하) 여백 px. safe_zone이 있으면 방향별 값, 없으면 safe_margin(x는 좌우, y는 상하)."""
     z = preset.get("safe_zone")
     if z:
         return z["left"], z["top"], z["right"], z["bottom"]
-    m = preset["safe_margin"]["x"]
-    return m, 0, m, m
+    return preset["safe_margin"]["x"], preset["safe_margin"]["y"], preset["safe_margin"]["x"], preset["safe_margin"]["y"]
+
+
+def _place_footer(layout, footer, W, H, ml, mr, mb, floor_y, band_h):
+    """안내 문구(group=footer)를 띠 안 가운데에 둔다. 띠 안에서도 하단 여백을 지키고, 원래 크기보다 키우지 않는다."""
+    uf = _union([e["bbox"] for e in footer])
+    fw, fh = uf[2] - uf[0], uf[3] - uf[1]
+    bp = S("layout.band_text_pad_px")
+    region = min(band_h, H - mb - floor_y)
+    fsc = min((W - ml - mr) / fw, (region - 2 * bp) / fh, 1.0)
+    fx = (W - fw * fsc) / 2
+    fy = floor_y + (region - fh * fsc) / 2
+    for e in footer:
+        b = e["bbox"]
+        layout["layers"].append({"id": e["id"], "type": "text", "importance": "critical", "src_bbox": b,
+                                 "scale": round(fsc, 4), "x": int(round(fx + (b[0] - uf[0]) * fsc)),
+                                 "y": int(round(fy + (b[1] - uf[1]) * fsc)), "group": "footer"})
 
 
 def auto_free(elements, src_size, preset, **_):
     """세로/정사각용 자유 배치. 원본의 요소 배열을 유지한 채 균등 축소하여 우하단 기준으로 앉힘.
-    배경은 cover + 원본 오른쪽/아래 기준으로 crop (글자가 원래 놓여 있던 흰 영역을 그대로 활용)."""
+    배경은 cover + 원본 오른쪽/아래 기준으로 crop (글자가 원래 놓여 있던 흰 영역을 그대로 활용).
+    띠(importance=band)가 있으면 캔버스 아래에 띠를 두고, 나머지 요소는 띠 윗면 위에 앉히며 안내 문구는 띠 안에 둔다."""
     W, H = preset["size"]
     ml, mt, mr, mb = _margins(preset)
+    gap = preset["min_gap"]
     sw, sh = src_size
     crit = [e for e in elements if e["importance"] == "critical"]
-    u = _union([e["bbox"] for e in crit])
+    band_el = next((e for e in elements if e["importance"] == "band"), None)
+    footer = [e for e in crit if e["type"] == "text" and e.get("group") == "footer"] if band_el else []
+    main = [e for e in crit if e not in footer]
+    u = _union([e["bbox"] for e in main])
     uw, uh = u[2] - u[0], u[3] - u[1]
-    f = min(1.0, (W - ml - mr) / uw, (H - mt - mb) / uh)
 
     s = max(W / sw, H / sh)
     bx = min(0, W - int(round(sw * s)))            # 오른쪽 기준 crop
     by = min(0, H - int(round(sh * s)))            # 아래 기준 crop
     layout = {"bg": {"scale": s, "x": bx, "y": by}, "layers": []}
+    band_h = round((band_el["bbox"][3] - band_el["bbox"][1]) * W / sw) if band_el else 0
+    floor_y = H - band_h
+    if band_el:
+        layout["band"] = {"src_bbox": band_el["bbox"], "h": band_h}
+        layout["floor"] = {"y": floor_y, "src_y": band_el["bbox"][1]}
 
+    on_band = bool(band_el) and any(e["type"] != "text" and e["bbox"][3] >= band_el["bbox"][1] - 3 for e in main)
+    bottom_bleed = not band_el and any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") and e["type"] != "text" for e in main)
+    bottom = floor_y if on_band else (H if bottom_bleed else (floor_y - gap if band_el else H - mb))
+    text_limit = (floor_y - gap) if band_el else H - mb   # 글자는 이 선을 넘지 않는다
+    f = min(1.0, (W - ml - mr) / uw, (bottom - mt) / uh)
     right = W - mr
-    bottom_bleed = any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") and e["type"] != "text" for e in crit)
-    bottom = H if bottom_bleed else H - mb
-    for e in crit:
+    for e in main:
         b = e["bbox"]
         layout["layers"].append({
             "id": e["id"], "type": e["type"], "importance": "critical",
@@ -223,20 +250,31 @@ def auto_free(elements, src_size, preset, **_):
             "x": int(round(right - (u[2] - b[0]) * f)),
             "y": int(round(bottom - (u[3] - b[1]) * f)),
             **({"bleed": ["bottom"]} if bottom_bleed and e["type"] != "text" else {}),
+            **({"on_band": True} if on_band and e["type"] != "text" else {}),
         })
     if bottom_bleed:   # 반올림 오차 보정: 피사체 하단을 캔버스 끝에 정확히
         sub = [L for L in layout["layers"] if "bleed" in L]
         dy = H - max(round(L["y"] + (L["src_bbox"][3] - L["src_bbox"][1]) * L["scale"]) for L in sub)
         for L in layout["layers"]:
             L["y"] += dy
-    # 원본에서 글자와 피사체의 bbox가 이미 맞닿아 있던 배열(모자 꼭대기가 제목 밑줄 높이에 걸리는 식)은 bbox 간격이 아니라
-    # 실제 피사체 실루엣 기준으로 검사한다(validate.check_clearance). 실루엣이 가까우면 거기서 FAIL이 난다.
+
     def _bx(L):
         x0, y0, x1, y1 = L["src_bbox"]
         return [L["x"], L["y"], L["x"] + round((x1 - x0) * L["scale"]), L["y"] + round((y1 - y0) * L["scale"])]
-    gap = preset["min_gap"]
+    # 피사체를 바닥(캔버스 끝·띠 윗면)에 붙이면 같은 기준으로 앉은 글자가 하단 여백을 넘을 수 있다 -> 글자만 그만큼 올린다
+    tl = [L for L in layout["layers"] if L["type"] == "text"]
+    if tl:
+        over = max(_bx(L)[3] for L in tl) - text_limit
+        if over > 0:
+            for L in tl:
+                L["y"] -= over
+    if footer:
+        _place_footer(layout, footer, W, H, ml, mr, mb, floor_y, band_h)
+    # 원본에서 글자와 피사체의 bbox가 이미 맞닿아 있던 배열(모자 꼭대기가 제목 밑줄 높이에 걸리는 식)은 bbox 간격이 아니라
+    # 실제 피사체 실루엣 기준으로 검사한다(validate.check_clearance). 실루엣이 가까우면 거기서 FAIL이 난다.
     for L in layout["layers"]:
-        if L["type"] != "text" and any(_overlap(_bx(L), _bx(T), gap) for T in layout["layers"] if T["type"] == "text"):
+        if L["type"] != "text" and any(_overlap(_bx(L), _bx(T), gap) for T in layout["layers"]
+                                       if T["type"] == "text" and T.get("group") != "footer"):
             L["overlap_ok"] = True
     return layout
 
@@ -436,8 +474,9 @@ def place_decor(layout, elements, preset, src_size):
         anchor = e.get("anchor", "corner_tl")
         overlap = e.get("overlap", "none")          # any | subject | none
         placed = None
+        k_size = min(k, W / sw * S("decor.max_scale_vs_width"))   # 세로형에서 바닥 비율 k가 커져 장식이 화면을 압도하지 않게
         for f in S("decor.shrink_steps"):
-            sc = k * f
+            sc = k_size * f
             w, h = round((x1 - x0) * sc), round((y1 - y0) * sc)
             # 앵커 모서리를 기준으로 원본의 모서리 거리를 비율대로 유지(축소해도 모서리 쪽은 고정)
             left = "l" in anchor.split("_")[-1]

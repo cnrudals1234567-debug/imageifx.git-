@@ -99,7 +99,8 @@
     1132,
     1156
    ],
-   "stay_y": true
+   "stay_y": true,
+   "priority": "optional"
   },
   {
    "id": "chalk_w",
@@ -111,7 +112,8 @@
     812,
     1152
    ],
-   "stay_y": true
+   "stay_y": true,
+   "priority": "optional"
   },
   {
    "id": "chalk_y",
@@ -123,7 +125,8 @@
     880,
     1154
    ],
-   "stay_y": true
+   "stay_y": true,
+   "priority": "optional"
   }
  ]
 }

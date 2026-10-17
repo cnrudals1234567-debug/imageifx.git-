@@ -161,8 +161,33 @@ def do_convert(t):
     if any("error" not in r for r in store.load(jid)["results"].values()):
         _stage(jid, "done", "변환 완료")
         store.update(jid, _settle)
+        _auto_tune_new(jid, targets)
     else:
         _fail(jid, "모든 매체 변환이 실패했습니다")
+
+
+def _auto_tune_new(jid, presets):
+    """방금 만든 사이즈 중 배치 FAIL이 있는 것은 무료 자동 보정을 한 번 자동 실행한다(토큰 0, 수정 기록에 남아 되돌릴 수 있다).
+    FAIL이 없는 결과(기준 GFA 포함)는 건드리지 않는다. 풀리지 않으면 기록 없이 원래 결과를 유지한다."""
+    for preset in presets:
+        j = store.load(jid)
+        r = j["results"].get(preset)
+        if not r or "error" in r or not r.get("fails"):
+            continue
+        cur = store.ab(r["workdir"])
+        lay = ops.read_layout(cur)
+        pr = cli._presets()[lay["preset"]]
+        new, desc, b, a = autotune.solve(lay, pr, ops.load_layers(cur, lay))
+        if new is None or a >= b:
+            continue
+        n = max([x["n"] for x in j["fixes"]] + [0]) + 1
+        fx = {"n": n, "preset": preset, "kind": "auto", "label": "자동 보정(변환 직후 자동)", "status": "queued",
+              "merge": False, "time": store.time.strftime("%Y-%m-%d %H:%M:%S")}
+        store.update(jid, lambda x, f=fx: x["fixes"].append(f))
+        try:
+            do_fix({"job": jid, "preset": preset, "n": n, "fix_kind": "auto"})
+        except Exception as e:   # 자동 보정은 덤이다. 실패해도 변환 결과는 그대로 둔다
+            _fail(jid, f"{type(e).__name__}: {e}", fix_n=n)
 
 
 # ---- 수정 ----

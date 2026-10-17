@@ -97,3 +97,14 @@ def test_normal_dark_image_passes_image_rules(gfa):
     img = Image.new("RGB", (1250, 560), (30, 30, 35))
     rows = validate.check_image(img, {"layers": []}, gfa, {})
     assert all(r["ok"] for r in rows)
+
+
+def test_overlapping_subjects_from_source_are_not_a_gap_fail(gfa):
+    """원본에서 겹쳐 있던 피사체(인물+노트북)는 같은 배율이면 간격 FAIL이 아니다. 배율이 다르거나 원본에서 떨어져 있었으면 FAIL."""
+    from imageifx import validate
+    from conftest import make_layer
+    layout = {"layers": [make_layer("woman", 400, 100, 300, 300, typ="subject", scale=0.5, src_bbox=[0, 0, 300, 300]),
+                         make_layer("laptop", 450, 200, 200, 100, typ="subject", scale=0.5, src_bbox=[50, 100, 250, 200])]}
+    assert [r for r in validate.check(layout, gfa) if r["check"].startswith("간격") and not r["ok"]] == []
+    layout["layers"][1]["scale"] = 0.4   # 배율이 달라지면 관계가 깨진다
+    assert [r for r in validate.check(layout, gfa) if r["check"].startswith("간격") and not r["ok"]]

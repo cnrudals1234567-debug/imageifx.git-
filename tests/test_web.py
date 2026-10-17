@@ -12,6 +12,7 @@ from imageifx import cli
 from web import agent, autotune, fixer, ops, store, worker
 
 PRESET = "meta_1080x1080"
+TITLE_X = [10]   # 가짜 CLI가 만드는 제목 x. 10이면 안전영역(48) 밖이라 FAIL, 60이면 PASS
 
 
 # ---- 가짜 CLI: layout.json 내용에 따라 결과 이미지·report가 결정된다 ----
@@ -35,7 +36,7 @@ def _write_files(wd):
 
 def _make(wd, name, preset, elements):
     os.makedirs(wd, exist_ok=True)
-    layers = [{"id": "title", "type": "text", "importance": "critical", "src_bbox": [0, 0, 100, 40], "scale": 1.0, "x": 10, "y": 100},
+    layers = [{"id": "title", "type": "text", "importance": "critical", "src_bbox": [0, 0, 100, 40], "scale": 1.0, "x": TITLE_X[0], "y": 100},
               {"id": "owl", "type": "subject", "importance": "critical", "src_bbox": [0, 0, 200, 200], "scale": 1.0, "x": 300, "y": 600}]
     with open(os.path.join(wd, "layout.json"), "w", encoding="utf-8") as f:
         json.dump({"bg": {"scale": 1, "x": 0, "y": 0}, "layers": layers, "preset": preset, "name": name, "canvas": [1080, 1080]}, f)
@@ -113,6 +114,9 @@ def env(tmp_path, monkeypatch):
         except Exception as ex:
             worker._fail(t["job"], f"{type(ex).__name__}: {ex}", fix_n=t.get("n"))
     monkeypatch.setattr(worker, "enqueue", run_sync)
+    e.real_auto = worker._auto_tune_new
+    monkeypatch.setattr(worker, "_auto_tune_new", lambda jid, presets: None)   # 기본은 끔(처음 FAIL 상태를 검증하기 위해)
+    e.monkeypatch = monkeypatch
     return e
 
 
@@ -149,8 +153,8 @@ def test_catalog_metadata():
             assert p.get(key), (k, key)
         assert "verified" in p
     shown = [k for k, p in ps.items() if not p.get("hidden")]
-    assert "gfa_1250x560" in shown and "meta_1080x1920" in shown and "google_900x1600" in shown
-    assert "gfa_1200x560" not in shown and "google_1080x1920" not in shown
+    assert "gfa_1250x560" in shown and "google_900x1600" in shown
+    assert "gfa_1200x560" not in shown and "google_1080x1920" not in shown and "meta_1080x1920" not in shown   # 메타 스토리·릴스는 사용자 결정으로 제외
     assert ps["meta_1080x1920"]["safe_zone"]["top"] > 0
 
 
@@ -433,3 +437,27 @@ def test_analyzer_prompt_uses_style_docs_and_examples():
     t = fixer.analyzer_system_prompt()
     assert "bold_solid" in t and "dark_board" in t and "{{" not in t and "예시 1" in t
     assert "예시" not in fixer.analyzer_system_prompt(exclude=fixer.EXAMPLE_FILES).split("## 참고 예시")[1].replace("(사람이 검증한 분석, 다른 소재다)", "")
+
+
+def test_auto_tune_runs_after_convert(client, env):
+    env.monkeypatch.setattr(worker, "_auto_tune_new", env.real_auto)
+    jid = upload(client, presets=(PRESET, "meta_1080x1350"))
+    j = store.load(jid)
+    assert j["status"] == "done" and tokens(jid) == 60 and env.calls == ["analyze"]   # 토큰은 분석 1회뿐
+    assert all(r["fails"] == 0 for r in j["results"].values())
+    assert [(fx["kind"], fx["status"], fx["label"]) for fx in j["fixes"]] == [("auto", "done", "자동 보정(변환 직후 자동)")] * 2
+    # 자동으로 한 보정도 되돌릴 수 있다
+    assert client.post(f"/jobs/{jid}/size/{PRESET}/revert").status_code == 303
+    assert store.load(jid)["results"][PRESET]["fails"] == 1
+
+
+def test_auto_tune_skips_clean_results(client, env, monkeypatch):
+    env.monkeypatch.setattr(worker, "_auto_tune_new", env.real_auto)
+    monkeypatch.setattr(autotune, "solve", lambda *a, **k: pytest.fail("FAIL이 없는 결과에는 자동 보정을 부르면 안 된다"))
+    TITLE_X[0] = 60
+    try:
+        jid = upload(client)
+    finally:
+        TITLE_X[0] = 10
+    j = store.load(jid)
+    assert j["results"][PRESET]["fails"] == 0 and j["fixes"] == []
