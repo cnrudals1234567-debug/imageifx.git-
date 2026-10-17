@@ -1,0 +1,76 @@
+{
+ "style": "dark_photo",
+ "elements": [
+  {
+   "id": "headline",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    50,
+    28,
+    664,
+    296
+   ],
+   "fit": false
+  },
+  {
+   "id": "tagline",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    56,
+    308,
+    656,
+    352
+   ]
+  },
+  {
+   "id": "cta",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    60,
+    384,
+    350,
+    446
+   ]
+  },
+  {
+   "id": "date",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    58,
+    488,
+    508,
+    580
+   ]
+  },
+  {
+   "id": "notice",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    1100,
+    569,
+    1250,
+    596
+   ],
+   "group": "footer",
+   "fit": false,
+   "mask": "glyph"
+  },
+  {
+   "id": "students",
+   "type": "subject",
+   "importance": "critical",
+   "bbox": [
+    672,
+    138,
+    1254,
+    566
+   ],
+   "bleed_bottom": true
+  }
+ ]
+}

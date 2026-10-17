@@ -65,8 +65,12 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     band_el = next((e for e in elements if e["importance"] == "band"), None)   # 하단 안내 띠(전체 폭)
     all_texts = [e for e in crit if e["type"] == "text"]
     footer = [e for e in all_texts if e.get("group") == "footer"] if band_el else []   # 띠 안에 넣을 안내 문구
-    texts = [e for e in all_texts if e not in footer]
+    # 띠가 없을 때의 안내 문구(group=footer, 예: '*AI 활용 이미지'): 글자 블록과 따로 안전영역 왼쪽 아래 모서리에 원래 크기로 둔다.
+    notes = [e for e in all_texts if e.get("group") == "footer"] if not band_el else []
+    texts = [e for e in all_texts if e not in footer and e not in notes]
     subjs = [e for e in crit if e["type"] != "text"]
+    note_h = max([e["bbox"][3] - e["bbox"][1] for e in notes] + [0])
+    note_reserve = (note_h + gap) if notes else 0   # 글자 블록은 이만큼 위에서 끝난다
 
     # 배경: cover 방식 (캔버스를 가득 채움 -> 확장 불필요), 세로는 필수요소 중심으로 crop
     s = max(W / sw, H / sh)
@@ -90,10 +94,10 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
         uw, uh = u[2] - u[0], u[3] - u[1]
         # 원본 아래 끝에 걸려 있던 피사체는 직선으로 잘려 보이지 않게 캔버스 하단으로 bleed
         on_band = bool(band_el) and group[0]["type"] != "text" and any(e["bbox"][3] >= band_el["bbox"][1] - 3 for e in group)
-        bleed_b = group[0]["type"] != "text" and not on_band and any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") for e in group)
-        region_h = min(safe_h, floor_y - sy0) if band_el else safe_h
-        avail_h = (floor_y - sy0) if on_band else ((H - sy0) if bleed_b else region_h)
+        bleed_b = group[0]["type"] != "text" and not on_band and any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") or e.get("bleed_bottom") for e in group)   # bleed_bottom: 아래 일부(예: 겹친 안내 문구)를 bbox에서 뺐어도 캔버스 아래로 붙인다
         is_text = group[0]["type"] == "text"
+        region_h = (min(safe_h, floor_y - sy0) if band_el else safe_h) - (note_reserve if is_text else 0)
+        avail_h = (floor_y - sy0) if on_band else ((H - sy0) if bleed_b else region_h)
         cap = text_scale if is_text else ((person_h / uh) if person_h else 99)
         sc = min((x_right - x_left) / uw, avail_h / uh, cap)
         pw, ph = uw * sc, uh * sc
@@ -162,6 +166,15 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
             layout["layers"].append({"id": e["id"], "type": "text", "importance": "critical", "src_bbox": b,
                                      "scale": round(fsc, 4), "x": int(round(fx + (b[0] - uf[0]) * fsc)),
                                      "y": int(round(fy + (b[1] - uf[1]) * fsc)), "group": "footer"})
+
+    if notes:
+        un = _union([e["bbox"] for e in notes])
+        nx = min([L["x"] for L in layout["layers"] if L["type"] == "text"] + [sx0])
+        for e in notes:
+            b = e["bbox"]
+            layout["layers"].append({"id": e["id"], "type": "text", "importance": "critical", "src_bbox": b,
+                                     "scale": 1.0, "x": int(round(nx + b[0] - un[0])),
+                                     "y": int(round(sy1 - (un[3] - un[1]) + b[1] - un[1])), "group": "footer"})
 
     if scrim and texts:
         tl = [L for L in layout["layers"] if L["type"] == "text"]

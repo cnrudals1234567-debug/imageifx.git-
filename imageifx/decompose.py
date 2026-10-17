@@ -115,7 +115,7 @@ def run(src: Image.Image, elements: list, pad: int = None, text_mask: str = "bbo
 
     # 글자 bbox 자동 보정: elements의 bbox를 제자리에서 갱신(이후 레이아웃/elements.json에 반영됨)
     for e in elements:
-        if e["type"] == "text" and e["importance"] == "critical":
+        if e["type"] == "text" and e["importance"] == "critical" and e.get("fit", True):   # fit:false = 사진 위 글자 등 자동 보정이 번지는 경우 bbox를 그대로 쓴다
             others = [o["bbox"] for o in elements if o is not e and o.get("bbox") and o["importance"] not in ("band", "decor")]
             nb = _fit_bbox(arr, e["bbox"], others)
             if nb != e["bbox"]:

@@ -1,0 +1,9 @@
+{
+  "_doc": "어두운 단색 영역(왼쪽)에 흰·노랑 굵은 글씨, 오른쪽에 인물 사진이 있는 소재(첫 소재: 일반대학원 언어 시안 1254x600). 스크림을 끄고 글자는 왼쪽, 인물은 오른쪽 아래에 둔다. 배경은 crop+LaMa. 아직 baseline이 없는 시험 단계 프로필이다.",
+  "text_side": "left",
+  "scrim": false,
+  "text_scale": 0.78,
+  "person_h_ratio": 1.0,
+  "bg_top_ratio": 0.0,
+  "text_width_ratio": 0.62
+}
