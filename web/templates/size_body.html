@@ -1,0 +1,55 @@
+{% set kinds={'quick':'빠른 조정(토큰 0)','auto':'자동 보정(토큰 0)','ai':'AI 수정'} %}
+{% set pending = job.fixes|selectattr('preset','equalto',preset)|selectattr('status','in',['queued','running'])|list %}
+<div class="card" {% if pending or job.status in ('running','analyzing','queued') %}data-active="1"{% endif %}>
+{% if res.error %}<div class="bad">{{ res.error }}</div>
+{% elif not res %}<span class="mut">아직 이 사이즈의 결과가 없습니다({{ job.stage }}).</span>
+{% else %}
+{% if res.fails %}<div class="banner">규정 FAIL {{res.fails}}건 — 최종본이 아닙니다. 아래에서 고치세요.</div>{% endif %}
+<p>자체 규정 검사: FAIL {{res.fails}} · WARN {{res.warns}} · 용량 {{res.size_kb}}KB
+<span class="badge {{ 'ok' if pinfo.grade=='A' else ('warn' if 'C' in pinfo.grade else '') }}" title="{{pinfo.note}}">규칙 신뢰도 {{pinfo.grade}}{% if not pinfo.verified %} · 공식 미확인{% endif %}</span><br>
+<span class="mut">{{ pinfo.note }} 자체 검사이며 실제 검수 통과를 보장하지 않습니다. 반드시 이미지를 직접 확인하세요.</span></p>
+<div class="imgs">
+<div><div class="mut">최종</div><a href="/jobs/{{job.id}}/files/{{res.final}}"><img src="/jobs/{{job.id}}/files/{{res.final}}?v={{res.v}}" alt="최종"></a></div>
+<div><div class="mut">안전영역·레이어 박스</div><a href="/jobs/{{job.id}}/files/{{res.workdir}}/debug.png"><img src="/jobs/{{job.id}}/files/{{res.workdir}}/debug.png?v={{res.v}}" alt="안전영역"></a></div>
+<div><div class="mut">원본 | 결과</div><a href="/jobs/{{job.id}}/files/{{res.workdir}}/compare.png"><img src="/jobs/{{job.id}}/files/{{res.workdir}}/compare.png?v={{res.v}}" alt="비교"></a></div></div>
+<p><a class="btn sec" href="/jobs/{{job.id}}/files/{{res.final}}?download=1">다운로드</a></p>
+<details {% if res.fails or res.warns %}open{% endif %}><summary>검사 결과 표 ({{rows|length}}개 항목)</summary>
+<table class="rep">{% for row in rows %}<tr><td class="{{ 'f' if not row.ok else ('w' if row.warn else '') }}">{{ 'FAIL' if not row.ok else ('WARN' if row.warn else 'PASS') }}</td><td>{{row.check}}</td><td>{{row.detail}}</td>
+<td>{% if not row.ok or row.warn %}<button type="button" class="sec sm" onclick="var t=document.getElementById('req');t.value=this.dataset.t;t.focus()" data-t="{{ row.check }}: {{ row.detail[:80] }} 문제를 고쳐줘">AI에게 요청</button>{% endif %}</td></tr>{% endfor %}</table></details>
+{% endif %}</div>
+
+{% if res and not res.error %}
+{% if can_fix %}
+<div class="card"><h2>1. 빠른 조정 <span class="badge ok">토큰 0</span> <span class="mut">클릭하면 1~3초 안에 다시 그립니다. 글자 내용·폰트는 그대로, 위치와 크기만 바뀝니다.</span></h2>
+<form method="post" action="/jobs/{{job.id}}/size/{{preset}}/quick" class="qbtns">
+{% for key, lab in quick_labels %}<button name="action" value="{{key}}" class="sec">{{lab}}</button>{% endfor %}</form>
+{% if losts %}<p class="warn">빠진 장식: {{ losts|join(', ') }} (이 사이즈에는 자리가 없어 빠졌습니다)</p>
+<form method="post" action="/jobs/{{job.id}}/size/{{preset}}/quick" class="qbtns">{% for e in losts %}<button name="action" value="drop" class="sec" onclick="this.form.element.value='{{e}}'">‘{{e}}’ 장식 빼기</button>{% endfor %}<input type="hidden" name="element" value=""></form>
+<p class="mut">장식 빼기는 이 사이즈를 다시 배치하므로 이전 빠른 조정은 초기화됩니다. 필수 요소(글자·인물)는 뺄 수 없습니다.</p>{% endif %}</div>
+
+<div class="card"><h2>2. 자동 보정 <span class="badge ok">토큰 0</span> <span class="mut">글자 블록을 옮기고 조금 줄여 배치 규정 FAIL이 가장 적은 자리를 찾습니다(수 초).</span></h2>
+<form method="post" action="/jobs/{{job.id}}/size/{{preset}}/auto"><button {% if not res.fails %}class="sec"{% endif %}>자동 보정 실행</button></form></div>
+
+<div class="card"><h2>3. AI 수정 요청 <span class="badge warn">토큰 사용</span> <span class="mut">위 두 방법으로 안 풀릴 때만 쓰세요.</span></h2>
+{% if ai_ok %}<form method="post" action="/jobs/{{job.id}}/size/{{preset}}/fix">
+<textarea id="req" name="request" maxlength="1000" placeholder="예: 로고가 잘려요 / 글자를 조금 더 왼쪽으로 (비워 두면 FAIL·눈에 보이는 결함을 스스로 찾습니다)"></textarea>
+<p><button>AI에게 수정 요청</button> <span class="mut">예상 사용량 {% if est_ai %}약 {{ est_ai|n }} 토큰(지금까지 평균){% else %}측정 전(가벼운 호출 1회, 상한 {{ '40,000' }}){% endif %} · 이 사이즈의 AI 수정은 이 이미지 한 장과 짧은 요약만 보냅니다.</span></p></form>
+{% else %}<p class="warn">{{ ai_why }}</p>{% endif %}</div>
+{% elif why %}<div class="card"><p class="warn">{{ why }}</p></div>{% endif %}
+
+{% if fixes %}<div class="card"><h2>이 사이즈의 수정 기록</h2>
+{% for fx in fixes|reverse %}
+<div class="card"><b>{{fx.n}}회차 · {{ kinds.get(fx.kind, fx.kind) }}</b> <span class="badge">{{ fx.status }}</span>{% if fx.reverted %} <span class="badge warn">되돌림</span>{% endif %}
+<div class="mut">{{fx.time}} · {{ fx.label }}</div>
+{% if fx.error %}<div class="bad">{{fx.error}}</div>{% endif %}
+{% if fx.status=='done' %}
+<div class="imgs"><div><div class="mut">수정 전</div><img src="/jobs/{{job.id}}/files/{{fx.before.final}}?v={{fx.before.v}}" alt="전"></div>
+<div><div class="mut">수정 후</div><img src="/jobs/{{job.id}}/files/{{fx.after.final}}?v={{fx.after.v}}" alt="후"></div></div>
+<p>FAIL {{fx.before.fails}} → {{fx.after.fails}} · WARN {{fx.before.warns}} → {{fx.after.warns}}{% if fx.notes %} · {{ fx.notes }}{% endif %}</p>
+{% if fx.rejected %}<p class="warn">적용하지 않은 연산: {{ fx.rejected|join(' / ') }}</p>{% endif %}
+{% if loop.first and not fx.reverted and not pending %}<form method="post" action="/jobs/{{job.id}}/size/{{preset}}/revert"><button class="sec">이전 버전으로 되돌리기</button></form>{% endif %}
+{% endif %}</div>{% endfor %}</div>{% endif %}
+{% endif %}
+
+<div class="card"><h2>이 작업의 토큰 <span class="mut">(합계 {{ total.total|n }} · AI 수정 {{ job.usage|selectattr('kind','equalto','fix')|list|length }}회)</span></h2>
+<span class="mut">빠른 조정·자동 보정·사이즈 추가는 토큰을 쓰지 않습니다. <a href="/jobs/{{job.id}}">작업 화면</a>에서 상세를 볼 수 있습니다.</span></div>

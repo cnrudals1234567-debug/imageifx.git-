@@ -26,15 +26,17 @@ GPT로 만든 1:1 광고 이미지를 네이버 GFA(최우선), 메타, 구글 �
 - `verify <최종파일> --preset P` 저장된 파일만으로 독립 검증
 
 ## 테스트
-- 전체: `python -m uv run pytest -q` (31개, 약 5초, LaMa 불필요). 단일: `python -m uv run pytest tests/test_validate.py::이름 -q`
+- 전체: `python -m uv run pytest -q` (55개, 약 6초, LaMa·토큰 불필요). 단일: `python -m uv run pytest tests/test_validate.py::이름 -q`
 - 시스템 `python`은 3.14라 의존성이 없다. 반드시 `python -m uv run ...`을 쓴다. json은 항상 `encoding="utf-8"`로 연다(기본 cp949로 열면 `presets.json`에서 깨짐).
 - 단위 테스트는 기준 디자인의 시각 품질을 보장하지 않는다. 코드·상수를 고친 뒤에는 `baselines/_md5_before_refactor.txt`의 md5와 `relayout`/`render` 결과를 비교해 기준이 바뀌었는지 확인한다(규칙 4).
 
 ## 웹 UI (`web/`)
-- 실행: `python -m uv run uvicorn web.app:app --reload` (사내 공유: `--host 0.0.0.0 --port 8000`, 환경변수 `IMAGEIFX_WEB_PASSWORD`로 공용 비밀번호, `IMAGEIFX_DAILY_TOKEN_LIMIT`·`IMAGEIFX_FIX_LIMIT_PER_JOB`으로 사용량 제한).
-- 흐름: 업로드 → `ad-image-analyzer`(`claude -p`)가 분석 json 자동 생성·검증(1회 재시도) → `imageifx run`/`relayout` 서브프로세스 → 결과·report 표시 → "수정 요청" 버튼이 `ad-web-fixer`를 `claude -p`로 실행. 단일 워커 스레드가 한 번에 하나만 처리한다.
-- 작업 상태는 `output/_jobs/<id>/job.json`, 토큰 기록은 `output/_usage.jsonl`(모든 에이전트 실행마다 한 줄). 에이전트를 새로 붙일 때는 반드시 `worker._record`로 사용량을 기록해 화면에 보이게 한다.
-- 웹은 예시 소재(테솔 등)에 의존하지 않는다. 새 소재는 이미지만 받는다. 수정 에이전트는 `imageifx/`·`presets/`·`baselines/` 등을 고치면 안 되고, 고치면 화면에 경고가 뜬다(`fixer.protected_state`).
+- 실행: `python -m uv run uvicorn web.app:app --reload` (사내 공유: `--host 0.0.0.0 --port 8000`). 환경변수: `IMAGEIFX_WEB_PASSWORD`(공용 비밀번호), `IMAGEIFX_DAILY_TOKEN_LIMIT`, `IMAGEIFX_FIX_LIMIT_PER_SIZE`(AI 수정 사이즈당 횟수, 기본 3), `IMAGEIFX_ANALYZE_TOKEN_CAP`/`IMAGEIFX_FIX_TOKEN_CAP`(호출당 상한), `IMAGEIFX_MODEL`(기본 sonnet), `IMAGEIFX_EFFORT`(기본 low).
+- 흐름: 업로드(GFA/메타/구글 사이즈 선택) → 분석(`claude -p` 가벼운 호출, 이미지 sha256 캐시) → `imageifx run`(첫 사이즈, LaMa) + `relayout`(나머지) → 사이즈별 페이지(`/jobs/<id>/size/<preset>`)에서 수정. 단일 워커 스레드가 한 번에 하나만 처리한다.
+- **수정은 무료 단계 먼저**: 빠른 조정(`ops.QUICK`, 토큰 0) → 자동 보정(`autotune.solve`, 토큰 0) → AI 수정(`fixer.evidence` 한 장 + 연산 JSON 답변, 토큰). 수정은 항상 복사한 새 폴더(`<job>_<preset>_vN`)에서 하고 결과 포인터(`job.results`)만 바꾸므로 되돌리기는 포인터 복원이다. 에이전트는 `Read`만 쓰고 파일을 고치지 않는다.
+- 가벼운 호출(`agent.build_cmd(lean=True)`): 작업 폴더를 `output/_jobs/<id>/agent/`로 해서 저장소 CLAUDE.md·메모리가 안 실리고, `--system-prompt`(`web/prompts/`), `--strict-mcp-config`, `--no-session-persistence` 등을 쓴다. `--bare`는 구독 로그인이 안 되어 쓰지 않는다. 호출당 토큰 상한을 넘으면 중단하고 사용량만 기록한다.
+- 작업 상태 `output/_jobs/<id>/job.json`, 토큰 기록 `output/_usage.jsonl`. 에이전트를 새로 붙일 때는 `worker._call`로 호출해 사용량이 기록·표시되게 한다.
+- 웹은 예시 소재(테솔 등)에 의존하지 않는다. 사이즈 규격·신뢰도는 `presets/presets.json`의 `group/label/grade/verified/note/hidden`과 `docs/size_catalog.md`가 단일 출처다.
 - 테스트는 `claude`와 LaMa를 가짜로 바꾼다(`tests/test_web.py`). 실제 에이전트 호출은 토큰을 쓴다.
 
 ## 데이터 흐름

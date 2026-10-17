@@ -1,14 +1,35 @@
-"""분석 json 검증, 에이전트 프롬프트 조립, 수정 전 스냅샷·복원, 금지 경로 보호."""
-import hashlib, json, os, shutil, subprocess
+"""분석 json 검증·환산, AI 호출용 증거(이미지 1장 + 짧은 텍스트) 만들기, AI가 답한 연산 검증."""
+import json, os
 
 from PIL import Image, ImageDraw
 
 from imageifx import spec
-from . import store
+from . import ops, store
 
-TYPES = ("text", "subject", "person", "product", "logo", "decor", "decorative")
+PROMPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 IMPORTANCE = ("critical", "movable", "decor", "band", "drop")
-PROTECTED = ("imageifx", "presets", "baselines", "samples", "docs", ".claude", "web", "tests")
+MAX_SIDE = 1024          # 에이전트에게 보여 주는 이미지의 긴 변(px). 이미지 토큰 ≈ 가로×세로÷750
+MAX_AI_OPS = 8
+ANALYZER_VERSION = "v3"   # 분석 프롬프트가 바뀌면 올려서 예전 분석 캐시를 쓰지 않게 한다
+EXAMPLE_FILES = ("grad_ai_english", "tesol_v2", "real1", "grad_global")   # samples/ 의 사람이 검증한 분석(스타일별 1개)
+
+
+def prompt_text(name):
+    with open(os.path.join(PROMPTS, name), encoding="utf-8") as f:
+        return f.read().strip()
+
+
+def analyzer_system_prompt(exclude=()):
+    """스타일 설명(presets/styles/*.json의 _doc)과 검증된 분석 예시를 읽어 분석 프롬프트를 만든다. 하드코딩하지 않는다."""
+    nl = chr(10)
+    styles = nl.join(f"- {n}: {spec.style(n).get('_doc', '')}" for n in spec.style_names())
+    ex = []
+    for name in [n for n in EXAMPLE_FILES if n not in exclude]:   # exclude: 평가용(같은 소재의 정답을 예시에서 뺀다)
+        p = os.path.join(spec.ROOT, "samples", name + ".json")
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                ex.append(f"예시 {len(ex) + 1} ({name}):" + nl + json.dumps(json.load(f), ensure_ascii=False, separators=(",", ":")))
+    return prompt_text("analyzer.md").replace("{{STYLES}}", styles).replace("{{EXAMPLES}}", (nl * 2).join(ex))
 
 
 # ---- 분석 json ----
@@ -45,6 +66,27 @@ def validate_analysis(data, size):
     return errs
 
 
+def make_small(src, out):
+    """에이전트용 축소본을 저장하고 (원본/축소본) 배율을 돌려준다. 이미 작으면 그대로 복사."""
+    im = Image.open(src).convert("RGB")
+    f = max(1.0, max(im.size) / MAX_SIDE)
+    if f > 1:
+        im = im.resize((round(im.width / f), round(im.height / f)), Image.LANCZOS)
+    im.save(out)
+    return f, im.size
+
+
+def scale_analysis(data, factor, size, pad=2):
+    """축소본 좌표로 받은 bbox를 원본 크기로 환산하고(패딩 포함) 이미지 안으로 맞춘다."""
+    W, H = size
+    for e in data.get("elements", []):
+        b = e.get("bbox")
+        if isinstance(b, list) and len(b) == 4 and all(isinstance(v, (int, float)) for v in b):
+            e["bbox"] = [max(0, round(b[0] * factor) - pad), max(0, round(b[1] * factor) - pad),
+                         min(W, round(b[2] * factor) + pad), min(H, round(b[3] * factor) + pad)]
+    return data
+
+
 def draw_preview(image_path, analysis, out_path):
     im = Image.open(image_path).convert("RGB")
     d = ImageDraw.Draw(im)
@@ -56,84 +98,52 @@ def draw_preview(image_path, analysis, out_path):
     im.save(out_path)
 
 
-def analyzer_prompt(image_abs, out_abs, size, errors=None):
-    styles = ", ".join(spec.style_names())
-    p = f"""광고 이미지 `{image_abs}` ({size[0]}x{size[1]} px)를 Read로 열어 눈으로 보고 분석 json을 `{out_abs}` 에 Write로 저장하라.
-(samples/ 에 저장하지 말 것. 위 경로에만 저장한다. 이 이미지는 처음 보는 새 소재이므로 기존 예시 소재를 가정하지 말 것.)
-
-형식: {{"style": "<{styles} 중 하나>", "elements": [{{"id": 영문소문자_숫자, "type": "text|subject|decor", "importance": "critical|movable|decor|band|drop", "bbox": [x0,y0,x1,y1]}}]}}
-- style: dark_board(어두운 칠판) / photo_collage(밝은 사진·콜라주) / bold_solid(단색 배경+굵은 큰 글씨) / dark_photo(어두운 단색 영역에 글씨, 한쪽에 인물 사진).
-- importance: critical=글자·인물(안전영역 규칙 대상), movable=재배치할 장식(배경에서 제거), decor=장식을 부품으로 복사(flat 스타일 전용), band=전체 폭 띠, drop=지우기만.
-- 글자는 줄이 아니라 의미 블록(제목/서브/CTA/날짜) 단위, bbox는 글자보다 4~8px 넉넉히. 안내 문구(*AI 활용 이미지 등)는 "group": "footer".
-- 좌표는 원본 픽셀. 추측하지 말고 bbox를 그려 확인 이미지를 만들어 Read로 다시 열어 검증한다.
-- 마지막 답변에는 저장한 경로와 한 줄 요약만 쓴다(json 전체를 답변에 쓰지 말 것)."""
-    if errors:
-        p += "\n\n이전 시도의 검증 오류. 반드시 고칠 것:\n- " + "\n- ".join(errors)
-    return p
+def analyzer_message(size_small):
+    return f"source.png({size_small[0]}x{size_small[1]})를 Read로 열어 요소를 분석하고 JSON 블록으로 답하라."
 
 
-def fixer_prompt(job, preset, res, request, fix_n):
-    wd = res["workdir"]
-    rep = []
-    rp = store.ab(res["report"]) if res.get("report") else None
-    if rp and os.path.exists(rp):
+# ---- AI 수정 증거 ----
+def evidence(preset_key, preset, res, request, agent_dir, tag):
+    """AI에게 줄 (프롬프트, 이미지 경로). 이미지는 안전영역·레이어 박스가 그려진 debug.png 한 장(긴 변 1024px 이하)."""
+    wd = store.ab(res["workdir"])
+    view = os.path.join(agent_dir, f"view_{tag}.png")
+    make_small(os.path.join(wd, "debug.png"), view)
+    layout = ops.read_layout(wd)
+    rows = []
+    rp = os.path.join(wd, "report.json")
+    if os.path.exists(rp):
         with open(rp, encoding="utf-8") as f:
-            rep = [r for r in json.load(f) if not r["ok"] or r.get("warn")]
-    lines = "\n".join(f"- {'WARN' if r['ok'] else 'FAIL'} {r['check']}: {r['detail']}" for r in rep) or "- (FAIL/WARN 없음)"
-    ask = request.strip() or "(사용자 요청 없음: report의 FAIL/WARN과 compare.png·debug.png에서 눈으로 보이는 결함을 스스로 찾아 고쳐라.)"
-    return f"""imageifx 웹의 '수정 요청'이다. 작업 {job['id']}, 매체 {preset}, 수정 {fix_n}회차.
-
-작업 폴더: output/{wd}  (layout.json, elements.json, report.json, compare.png, debug.png, 최종 이미지)
-이 작업의 분석 json: output/_jobs/{job['id']}/analysis.json
-최종 이미지: output/{res['final']}
-
-사용자 요청:
-{ask}
-
-현재 report의 FAIL/WARN:
-{lines}
-
-절차: (1) report.json, compare.png, debug.png, 최종 이미지를 Read로 직접 열어 눈으로 확인한다. (2) 좌표만 고치면 output/{wd}/layout.json 을 Edit 후
-`python -m uv run python -m imageifx render output/{wd}`, bbox·중요도를 고치면 분석 json 과 output/{wd}/elements.json 을 함께 Edit 후
-`python -m uv run python -m imageifx relayout output/{wd} --tag fx{fix_n} --preset {preset}` (새 폴더가 생긴다). (3) `verify`로 검증하고 결과를 다시 연다. 최대 3회 반복.
-수정해도 되는 파일은 output/ 아래의 이 작업 파일뿐이다. imageifx/, presets/, baselines/, samples/, 코드는 절대 수정하지 말 것.
-글자를 다시 그리거나 폰트·내용을 바꾸지 말 것(이동·균등 축소만). 배경 확장에 블러·단색 늘리기 금지. 요청이 규정(안전영역·용량·크기 등)과 충돌하면 고치지 말고 이유를 보고한다.
-hard FAIL이 남으면 최종본이 아니라고 보고한다. "네이버 검수 통과"라고 쓰지 말 것.
-
-마지막 답변 끝에 다음 JSON 블록 하나를 출력한다:
-```json
-{{"final_workdir": "새 최종 작업 폴더 이름(output/ 아래, 같은 폴더면 그대로)", "changes": [{{"id": "요소id", "field": "x", "before": 0, "after": 0, "why": "이유"}}], "remaining_fail": ["남은 FAIL 항목"], "notes": "사용자에게 한 줄 설명"}}
-```"""
+            rows = [r for r in json.load(f) if not r["ok"] or r.get("warn")]
+    rows.sort(key=lambda r: (r["ok"], r["check"]))
+    flines = "\n".join(f"- {'WARN' if r['ok'] else 'FAIL'} {r['check']}: {r['detail'][:110]}" for r in rows[:8]) or "- (없음)"
+    layers = "\n".join(f"- {L['id']} {L['type']}/{L['importance']} 박스 {ops.box(L)} 배율 {L['scale']}" for L in layout["layers"])
+    z = preset.get("safe_zone")
+    zone = f"안전영역 상{z['top']} 하{z['bottom']} 좌{z['left']} 우{z['right']}" if z else f"여백 {preset['safe_margin']['x']}px"
+    ask = request.strip() or "(요청 없음: FAIL/WARN과 눈에 보이는 결함을 스스로 찾아 고쳐라)"
+    msg = (f"매체 {preset_key} {preset['size'][0]}x{preset['size'][1]}, {zone}, 최소 간격 {preset['min_gap']}px.\n"
+           f"이미지 축척: 아래 좌표는 원본 크기(캔버스) 기준이고 view_{tag}.png는 축소본이다.\n\n레이어:\n{layers}\n\n"
+           f"규정 FAIL/WARN:\n{flines}\n\n사용자 요청: {ask}\n\nview_{tag}.png를 Read로 열어 확인하고 JSON 블록으로 답하라.")
+    return msg, view
 
 
-# ---- 스냅샷·복원 ----
-def snapshot(jid, preset, n, res):
-    """수정 전 작업 폴더를 통째로 복사한다. (복사본 상대경로) 반환."""
-    src = store.ab(res["workdir"])
-    dst = os.path.join(store.job_dir(jid), f"fix{n}_{preset}", "before")
-    if os.path.exists(dst):
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst)
-    return store.rel(dst)
-
-
-def restore(res_before, snap_rel):
-    """스냅샷을 원래 작업 폴더에 되돌린다."""
-    src, dst = store.ab(snap_rel), store.ab(res_before["workdir"])
-    shutil.copytree(src, dst, dirs_exist_ok=True)
-
-
-def file_md5(path):
-    with open(path, "rb") as f:
-        return hashlib.md5(f.read()).hexdigest()
-
-
-# ---- 금지 경로 보호 ----
-def protected_state():
-    """보호 경로의 변경 상태 지문(git). 에이전트 실행 전후로 비교한다."""
-    try:
-        st = subprocess.run(["git", "status", "--porcelain", "--", *PROTECTED], cwd=store.ROOT, capture_output=True, text=True, encoding="utf-8").stdout
-        df = subprocess.run(["git", "diff", "HEAD", "--", *PROTECTED], cwd=store.ROOT, capture_output=True, text=True, encoding="utf-8").stdout
-    except OSError:
-        return None
-    return hashlib.md5((st + df).encode("utf-8")).hexdigest()
+def parse_ai_ops(data, layout, elements):
+    """AI 답변 dict -> (적용할 연산, drop할 장식 id 목록, 거부 사유 목록, notes)."""
+    good, drops, bad = [], [], []
+    ids = {L["id"] for L in layout["layers"]}
+    by_id = {e["id"]: e for e in elements}
+    for op in (data or {}).get("ops", [])[:MAX_AI_OPS]:
+        if not isinstance(op, dict):
+            bad.append(f"연산 형식 오류: {op!r}")
+            continue
+        if op.get("op") == "drop":
+            e = by_id.get(op.get("id"))
+            if not e or e["importance"] not in ("movable", "decor"):
+                bad.append(f"drop 거부(필수 요소이거나 없음): {op.get('id')}")
+            else:
+                drops.append(e["id"])
+            continue
+        if op.get("op") in ("move", "scale") and not op.get("group") and op.get("id") not in ids:
+            bad.append(f"없는 레이어: {op.get('id')}")
+            continue
+        good.append(op)
+    return good, drops, bad, str((data or {}).get("notes") or "")[:300]

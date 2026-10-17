@@ -18,3 +18,14 @@ table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;p
 pre.log{background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:10px;max-height:240px;overflow:auto;font-size:12px;white-space:pre-wrap}
 .rep td.f{color:var(--bad);font-weight:600}.rep td.w{color:var(--warn)}
 @media (max-width:600px){main{padding:12px}}
+
+fieldset.grp{border:1px solid var(--bd);border-radius:10px;margin:0 0 12px;padding:8px 12px}
+fieldset.grp legend{font-weight:700;padding:0 6px}
+.sizes{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+label.size{display:block;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;cursor:pointer;font-size:13px}
+label.size:has(input:checked){border-color:var(--ac);background:rgba(47,109,246,.08)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:16px}
+a.card.sz{color:inherit;text-decoration:none;margin:0}a.card.sz img{width:100%;border-radius:6px;border:1px solid var(--bd);margin:6px 0}
+a.card.sz:hover{border-color:var(--ac)}
+.qbtns{display:flex;gap:8px;flex-wrap:wrap}button.sm{padding:2px 8px;font-size:12px}
+.badge.ok{color:var(--ok)}.badge.warn{color:var(--warn)}.badge.bad{color:var(--bad)}

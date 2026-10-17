@@ -1,7 +1,8 @@
 {% extends "base.html" %}{% block body %}<h1>토큰 사용량</h1>
 <div class="card"><p>전체 {{ grand.total|n }} 토큰 (입력 {{grand.input|n}} · 출력 {{grand.output|n}} · 캐시 생성 {{grand.cache_creation|n}} · 캐시 읽기 {{grand.cache_read|n}}) · {{grand.runs}}회 실행 · 참고 비용 ${{ '%.2f'|format(grand.cost_usd) }}</p>
 <p class="mut">참고 비용은 API 가격 환산값이며 구독 사용 시 실제 청구액이 아닙니다. 합계는 입력+출력+캐시 생성이고 캐시 읽기는 따로 표시합니다.</p></div>
+<div class="card"><h2>무료로 해결한 횟수 vs AI 호출</h2><p>빠른 조정 {{fixc.quick}}회 · 자동 보정 {{fixc.auto}}회 (토큰 0) / AI 수정 {{fixc.ai}}회 (토큰 사용)</p></div>
 <div class="card"><h2>날짜·종류별</h2><table><tr><th>날짜</th><th>종류</th><th class="r">실행</th><th class="r">합계</th><th class="r">입력</th><th class="r">출력</th><th class="r">캐시 생성</th><th class="r">캐시 읽기</th></tr>
-{% for d,k,s in rows %}<tr><td>{{d}}</td><td>{{ '분석' if k=='analyze' else '수정' }}</td><td class="r">{{s.runs}}</td><td class="r">{{s.total|n}}</td><td class="r">{{s.input|n}}</td><td class="r">{{s.output|n}}</td><td class="r">{{s.cache_creation|n}}</td><td class="r">{{s.cache_read|n}}</td></tr>{% else %}<tr><td colspan="8" class="mut">기록 없음</td></tr>{% endfor %}</table></div>
+{% for d,k,s in rows %}<tr><td>{{d}}</td><td>{{ '분석' if k=='analyze' else 'AI 수정' }}</td><td class="r">{{s.runs}}</td><td class="r">{{s.total|n}}</td><td class="r">{{s.input|n}}</td><td class="r">{{s.output|n}}</td><td class="r">{{s.cache_creation|n}}</td><td class="r">{{s.cache_read|n}}</td></tr>{% else %}<tr><td colspan="8" class="mut">기록 없음</td></tr>{% endfor %}</table></div>
 <div class="card"><h2>작업별 (최근 30개)</h2><table><tr><th>작업</th><th class="r">실행</th><th class="r">합계</th></tr>
 {% for jid,s in jobs_ %}<tr><td><a href="/jobs/{{jid}}">{{jid}}</a></td><td class="r">{{s.runs}}</td><td class="r">{{s.total|n}}</td></tr>{% endfor %}</table></div>{% endblock %}

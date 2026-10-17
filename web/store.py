@@ -1,5 +1,5 @@
 """작업(job) 저장소: output/_jobs/<id>/job.json 파일 하나가 작업 상태의 전부다. DB를 쓰지 않는다."""
-import json, os, threading, time, uuid
+import hashlib, json, os, threading, time, uuid
 from datetime import datetime
 
 from imageifx import spec
@@ -9,6 +9,7 @@ OUT = os.path.join(ROOT, "output")
 JOBS = os.path.join(OUT, "_jobs")
 INPUT = os.path.join(ROOT, "input")
 USAGE = os.path.join(OUT, "_usage.jsonl")
+CACHE = os.path.join(OUT, "_analysis_cache")
 _lock = threading.RLock()
 
 ACTIVE = ("queued", "analyzing", "running", "fixing")
@@ -123,3 +124,37 @@ def usage_today():
 def usage_month():
     mon = time.strftime("%Y-%m")
     return sum_usage([e for e in all_usage() if e["time"].startswith(mon)])
+
+
+# ---- 분석 캐시: 같은 이미지를 다시 올리면 분석 토큰을 쓰지 않는다 ----
+def image_sha(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()[:24]
+
+
+def cache_get(sha):
+    p = os.path.join(CACHE, sha + ".json")
+    if not os.path.exists(p):
+        return None
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def cache_put(sha, data):
+    os.makedirs(CACHE, exist_ok=True)
+    with open(os.path.join(CACHE, sha + ".json"), "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+
+def pending_fix(job, preset=None):
+    return [fx for fx in job["fixes"] if fx["status"] in ("queued", "running") and (preset is None or fx["preset"] == preset)]
+
+
+def fix_counts(jobs):
+    """수정 종류별 횟수(무료=auto·quick, AI=ai)."""
+    c = {"auto": 0, "quick": 0, "ai": 0}
+    for j in jobs:
+        for fx in j["fixes"]:
+            if fx.get("status") == "done":
+                c[fx.get("kind", "ai")] = c.get(fx.get("kind", "ai"), 0) + 1
+    return c
