@@ -4,17 +4,12 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "easyocr>=1.7.2",
-    "fastapi>=0.143.3",
-    "httpx>=0.28.1",
-    "jinja2>=3.1.6",
     "numpy>=2.5.4",
     "onnxruntime>=1.31.0",
     "opencv-python-headless>=5.0.0.93",
     "pillow>=12.3.0",
-    "python-multipart>=0.0.32",
     "rembg>=2.0.85",
     "simple-lama-inpainting>=0.1.0",
-    "uvicorn>=0.54.0",
 ]
 
 [dependency-groups]

@@ -1,7 +1,0 @@
-<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}imageifx{% endblock %}</title><link rel="stylesheet" href="/static/app.css"></head>
-<body><header>
-<a href="/">imageifx</a><a href="/jobs">작업 목록</a><a href="/usage">토큰 사용량</a><a href="/learning">학습된 방향</a><span class="sp"></span>
-<span class="tok" title="입력+출력+캐시 생성 합계(캐시 읽기 제외)">오늘 {{ usage_today.total|n }} 토큰{% if daily_limit %} / 상한 {{ daily_limit|n }}{% endif %} · 이번 달 {{ usage_month.total|n }} 토큰</span>
-</header><main>{% block body %}{% endblock %}</main></body></html>

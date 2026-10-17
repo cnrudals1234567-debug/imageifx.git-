@@ -26,18 +26,9 @@ GPT로 만든 1:1 광고 이미지를 네이버 GFA(최우선), 메타, 구글 �
 - `verify <최종파일> --preset P` 저장된 파일만으로 독립 검증
 
 ## 테스트
-- 전체: `python -m uv run pytest -q` (55개, 약 6초, LaMa·토큰 불필요). 단일: `python -m uv run pytest tests/test_validate.py::이름 -q`
+- 전체: `python -m uv run pytest -q` (LaMa·토큰 불필요, 약 6초). 단일: `python -m uv run pytest tests/test_validate.py::이름 -q`
 - 시스템 `python`은 3.14라 의존성이 없다. 반드시 `python -m uv run ...`을 쓴다. json은 항상 `encoding="utf-8"`로 연다(기본 cp949로 열면 `presets.json`에서 깨짐).
 - 단위 테스트는 기준 디자인의 시각 품질을 보장하지 않는다. 코드·상수를 고친 뒤에는 `baselines/_md5_before_refactor.txt`의 md5와 `relayout`/`render` 결과를 비교해 기준이 바뀌었는지 확인한다(규칙 4).
-
-## 웹 UI (`web/`)
-- 실행: `python -m uv run uvicorn web.app:app --reload` (사내 공유: `--host 0.0.0.0 --port 8000`). 환경변수: `IMAGEIFX_WEB_PASSWORD`(공용 비밀번호), `IMAGEIFX_DAILY_TOKEN_LIMIT`, `IMAGEIFX_FIX_LIMIT_PER_SIZE`(AI 수정 사이즈당 횟수, 기본 3), `IMAGEIFX_ANALYZE_TOKEN_CAP`/`IMAGEIFX_FIX_TOKEN_CAP`(호출당 상한), `IMAGEIFX_MODEL`(기본 sonnet), `IMAGEIFX_EFFORT`(기본 low).
-- 흐름: 업로드(GFA/메타/구글 사이즈 선택) → 분석(`claude -p` 가벼운 호출, 이미지 sha256 캐시) → `imageifx run`(첫 사이즈, LaMa) + `relayout`(나머지) → 사이즈별 페이지(`/jobs/<id>/size/<preset>`)에서 수정. 단일 워커 스레드가 한 번에 하나만 처리한다.
-- **수정은 무료 단계 먼저**: 빠른 조정(`ops.QUICK`, 토큰 0) → 자동 보정(`autotune.solve`, 토큰 0) → AI 수정(`fixer.evidence` 한 장 + 연산 JSON 답변, 토큰). 수정은 항상 복사한 새 폴더(`<job>_<preset>_vN`)에서 하고 결과 포인터(`job.results`)만 바꾸므로 되돌리기는 포인터 복원이다. 에이전트는 `Read`만 쓰고 파일을 고치지 않는다.
-- 가벼운 호출(`agent.build_cmd(lean=True)`): 작업 폴더를 `output/_jobs/<id>/agent/`로 해서 저장소 CLAUDE.md·메모리가 안 실리고, `--system-prompt`(`web/prompts/`), `--strict-mcp-config`, `--no-session-persistence` 등을 쓴다. `--bare`는 구독 로그인이 안 되어 쓰지 않는다. 호출당 토큰 상한을 넘으면 중단하고 사용량만 기록한다.
-- 작업 상태 `output/_jobs/<id>/job.json`, 토큰 기록 `output/_usage.jsonl`. 에이전트를 새로 붙일 때는 `worker._call`로 호출해 사용량이 기록·표시되게 한다.
-- 웹은 예시 소재(테솔 등)에 의존하지 않는다. 사이즈 규격·신뢰도는 `presets/presets.json`의 `group/label/grade/verified/note/hidden`과 `docs/size_catalog.md`가 단일 출처다.
-- 테스트는 `claude`와 LaMa를 가짜로 바꾼다(`tests/test_web.py`). 실제 에이전트 호출은 토큰을 쓴다.
 
 ## 데이터 흐름
 `run`: 원본+분석json → `decompose.run`(글자·요소 레이어 PNG + `clean_bg.png`, LaMa) → `layout.build`(스타일 프로필+프리셋으로 `layout.json` 생성) → `cli._finish`(`compose.build_bg` 배경 확장 → `compose.render` → `_export` PNG, 용량 초과 시 JPG 품질을 낮춤 → `validate.*` → `report.json`, `debug.png`, `compare.png`).
@@ -52,6 +43,7 @@ GPT로 만든 1:1 광고 이미지를 네이버 GFA(최우선), 메타, 구글 �
 - `imageifx/validate.py` 규정·글자 무결성·요소 보존·독립 검증
 - `presets/presets.json` 매체 규격과 규칙, `docs/gfa_guide.md` 규칙 근거와 신뢰도
 - `baselines/` 기준 디자인(최종 jpg, layout, 분해 캐시), `.claude/agents/` 검토 에이전트
+- `imageifx/occlusion.py` 글자가 인물 뒤에 가려진 곳 감지·복원(요소에 `occlusion: "restore"`를 준 경우만, 규칙 1의 사용자 승인 예외)
 
 ## 소재 한 장을 끝내는 순서 (검토 게이트)
 analyzer(요소 분석) -> 실행 -> 필요 시 element-fixer -> naturalness-reviewer(글자 잘림·쏠림·정렬 눈 점검)
@@ -70,3 +62,10 @@ analyzer(요소 분석) -> 실행 -> 필요 시 element-fixer -> naturalness-rev
 - 인물 `text_overlap_src_px`: 인물 bbox의 빈 공간까지 글자 영역을 넓힘(간격은 실루엣 기준으로 검사).
 - `decor`는 `background: flat` 스타일에서만 동작한다. 사진·질감 배경은 crop+LaMa이며, flat 적합도(잔차·배경 비율)가 낮으면 자동으로 crop으로 되돌아간다.
 - 자리가 없는 `optional` 장식은 인벤토리에 `DROPPED(사유)`로 보고된다. 조용한 손실은 없어야 한다.
+
+## 웹 UI 폐기 (2026-10-17)
+웹(`web/`)은 사용자 결정으로 제거했다(커밋 `243ca1d`까지 이력에 남아 있음). 이후 작업은 CLI(`run`/`relayout`/`render`/`verify`)로 이미지를 직접 확인하며 진행한다.
+
+## 스타일 추가 (이번 개발)
+- `photo_whole`: 사진 위에 글자가 얹힌 소재. 글자를 떼지 않고 원본을 통째로 균등 축소(`fit_ratio`)해 글자 묶음을 안전영역에 넣고 가장자리만 확장한다. 글자 레이어는 검사용(`ghost`)이라 합성되지 않는다. 오른쪽 확장은 단계적 LaMa(`fill.outpaint_progressive`) + 글자 없는 풍경 구간은 원본 반사(`fill.mirror_right`, `mirror_gap_px`·`mirror_src_x0`)로 채운다.
+- `bold_solid`: `band_tint_ratio`로 거의 흰 하단 띠에 배경색을 섞어 "가장자리 흰색 채움" FAIL을 피한다(디자인 색 변경이므로 사용자 확인 필요).
