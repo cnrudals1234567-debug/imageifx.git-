@@ -95,3 +95,52 @@ def mirror_right(canvas: Image.Image, covered: np.ndarray, y_from: int, x_min: i
     a[y0:, c1:] = a[y0:, src]
     filled[y0:, c1:] = True
     return Image.fromarray(a), filled
+
+
+def sky_right(canvas: Image.Image, covered: np.ndarray, y_to: int, cols=60, seed=7):
+    """오른쪽 확장의 y_to 위쪽(하늘)을 AI 대신 하늘 색 모델로 채운다. AI 채움은 하늘에서 단계마다 세로 줄무늬(물결 결)가 생긴다.
+    행마다 원본 오른쪽 가장자리 cols 열의 중앙값(구름·반짝이는 이상치 제외)을 하늘색 프로필로 쓰고, 경계 색 차이는 멀어질수록 사라지게 이어 붙이며,
+    원본 하늘의 입자(고주파 잡음)와 아주 완만한 밝기 변화를 더해 밋밋한 면이 되지 않게 한다. (채운 canvas, 채운 곳 mask) 반환."""
+    import cv2
+    a = np.asarray(canvas.convert("RGB")).astype(np.float32)
+    H, W = a.shape[:2]
+    cv = covered.any(axis=0)
+    c0, c1 = int(cv.argmax()), W - int(cv[::-1].argmax())
+    filled = np.zeros((H, W), bool)
+    y_to = min(H, y_to)
+    if c1 >= W or y_to <= 0:
+        return canvas, filled
+    edge = a[:y_to, c1 - cols:c1]                                    # (y, cols, 3)
+    # 행별 하늘색: 그 행에서 붉은 기가 낮은(=파란 하늘) 픽셀만 평균 내 구름·반짝이를 제외하고, 세로로 중앙값 필터 후 부드럽게
+    thr = np.quantile(edge[..., 0], 0.4, axis=1, keepdims=True)
+    w = (edge[..., 0] <= thr).astype(np.float32)[..., None]
+    prof = (edge * w).sum(axis=1) / np.maximum(1.0, w.sum(axis=1))
+    prof = np.stack([cv2.medianBlur(np.clip(prof[:, k], 0, 255).astype(np.uint8).reshape(-1, 1), 41).reshape(-1) for k in range(3)], -1).astype(np.float32)
+    # 지평선 근처는 하늘이 뿌옇게 밝아지므로(파란 하늘만 고르면 가장자리와 색이 어긋남) 아래 구간은 전체 중앙값 프로필로 서서히 바꾼다
+    pm = np.stack([cv2.medianBlur(np.clip(np.median(edge[..., k], axis=1), 0, 255).astype(np.uint8).reshape(-1, 1), 41).reshape(-1) for k in range(3)], -1).astype(np.float32)
+    hz = np.clip((np.arange(y_to) - (y_to - 110)) / 60.0, 0, 1)[:, None]
+    prof = prof * (1 - hz) + pm * hz
+    first = int(covered[:, c1 - 1].argmax())                         # 원본이 시작되는 행(그 위는 맨 윗줄 프로필을 이어 씀)
+    prof[:first] = prof[first]
+    prof = cv2.GaussianBlur(prof.reshape(-1, 1, 3), (1, 0), sigmaX=0.1, sigmaY=6).reshape(-1, 3)
+    n = W - c1
+    out = np.repeat(prof[:, None, :], n, axis=1)
+    d = np.clip(np.median(a[:y_to, c1 - 3:c1], axis=1) - prof, -25, 25)   # 경계에서 실제 가장자리와 프로필의 차이(구름 등 큰 차이는 제한): 멀어질수록 0으로
+    d[:first] = 0
+    d = cv2.GaussianBlur(d.reshape(-1, 1, 3), (1, 0), sigmaX=0.1, sigmaY=10).reshape(-1, 3)
+    ramp = np.exp(-np.arange(n) / 90.0)[None, :, None]
+    out += d[:, None, :] * ramp
+    big = a[:y_to, c1 - 1] - prof - d                                 # 구름처럼 큰 차이는 짧게(약 20px) 번지며 사라져 구름이 칼로 자른 듯 끝나지 않게
+    big[:first] = 0
+    big = cv2.GaussianBlur(big.reshape(-1, 1, 3), (1, 0), sigmaX=0.1, sigmaY=5).reshape(-1, 3)
+    out += big[:, None, :] * np.exp(-np.arange(n) / 20.0)[None, :, None]
+    rng = np.random.default_rng(seed)
+    lo = rng.normal(0, 1, (max(2, y_to // 80), max(2, n // 80), 3)).astype(np.float32)   # 아주 완만한 밝기 변화(±1.5 안팎)
+    out += cv2.resize(lo, (n, y_to), interpolation=cv2.INTER_CUBIC) * 1.5
+    hp = edge - cv2.GaussianBlur(edge, (0, 0), 2)
+    sd = float(np.median(np.abs(hp - np.median(hp))) * 1.4826)       # 원본 하늘 입자 크기(이상치에 강한 추정)
+    sd = max(sd, 0.8)
+    out += cv2.GaussianBlur(rng.normal(0, sd, out.shape).astype(np.float32), (0, 0), 0.7)
+    a[:y_to, c1:] = np.clip(out, 0, 255)
+    filled[:y_to, c1:] = True
+    return Image.fromarray(a.astype(np.uint8)), filled

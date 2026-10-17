@@ -50,6 +50,9 @@ analyzer(요소 분석) -> 실행 -> 필요 시 element-fixer -> naturalness-rev
 -> gfa-guide-fitter(마지막 수정 후 서로 다른 3회 검토) -> design-director(PASS/REWORK).
 수정하면 검토를 처음부터 다시 한다.
 
+## 사례집
+새 소재·결함이 생기면 `docs/cases.md`(과거 사례, 해결 옵션, 기준 이미지 `docs/cases/`)를 먼저 본다. `ad-case-advisor`가 비슷한 사례를 찾아 주고, `ad-extension-checker`가 확장 영역의 줄무늬·이음선·복제 조각을 대비 강조 확대로 점검한다. 새 사례를 풀면 사례집에 추가한다.
+
 ## 이번 합의 (사용자 확정)
 - 올빼미 얼굴이 좌측 240px 경계에 걸리는 것, 한국어학과에서 스크림이 노트 손글씨를 덮는 것은 "이대로" 수락됨.
 - 우선순위: 디자인 스타일 일관성과 GFA 규정 준수 둘 다 매우 중요.

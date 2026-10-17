@@ -187,7 +187,7 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     return layout
 
 
-def auto_whole(elements, src_size, preset, text_v_ratio=None, fit_ratio=1.0, mirror_gap_px=None, mirror_src_x0=0, **_):
+def auto_whole(elements, src_size, preset, text_v_ratio=None, fit_ratio=1.0, mirror_gap_px=None, mirror_src_x0=0, sky_right=False, **_):
     """원본 통째 유지: 글자를 떼지 않고 원본 전체를 균등 축소해 글자 묶음이 안전영역에 들어가게 하고, 모자라는 가장자리는 배경 확장(LaMa)으로 채운다.
     글자 레이어는 검사용(ghost)이며 합성되지 않는다."""
     W, H = preset["size"]
@@ -211,6 +211,8 @@ def auto_whole(elements, src_size, preset, text_v_ratio=None, fit_ratio=1.0, mir
     if mirror_gap_px is not None:   # 마지막 글자 아래 이만큼부터는 풍경이므로 오른쪽 확장을 원본 반사로 채운다
         bg["mirror_below_src_y"] = u[3] + mirror_gap_px
         bg["mirror_src_x0"] = mirror_src_x0
+        if sky_right:
+            bg["sky_right"] = True
     return {"bg": bg, "layers": layers, "floor": {"y": H, "src_y": sh}}
 
 
@@ -316,7 +318,7 @@ def build(elements, src_size, preset, style_dict=None, overrides=None, style_nam
         lay = auto_stack(elements, src_size, preset, **preset.get("stack", {}))
     elif (style_dict or {}).get("layout") == "whole" and kind != "free":
         lay = auto_whole(elements, src_size, preset, text_v_ratio=opts["text_v_ratio"], fit_ratio=style_dict.get("fit_ratio", 1.0),
-                         mirror_gap_px=style_dict.get("mirror_gap_px"), mirror_src_x0=style_dict.get("mirror_src_x0", 0))
+                         mirror_gap_px=style_dict.get("mirror_gap_px"), mirror_src_x0=style_dict.get("mirror_src_x0", 0), sky_right=style_dict.get("sky_right", False))
     elif kind == "free" and W / H < 1.3:
         lay = auto_free(elements, src_size, preset)
     else:

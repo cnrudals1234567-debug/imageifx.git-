@@ -6,5 +6,6 @@
   "text_v_ratio": 0.0,
   "fit_ratio": 0.93,
   "mirror_gap_px": -12,
-  "mirror_src_x0": 780
+  "mirror_src_x0": 780,
+  "sky_right": true
 }

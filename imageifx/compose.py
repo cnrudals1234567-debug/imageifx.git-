@@ -63,6 +63,9 @@ def build_bg(clean: Image.Image, layout, cache_dir=None):
                 if b.get("mirror_below_src_y"):   # 글자 없는 풍경 구간은 원본 반사로(실제 픽셀, 흐려지지 않음). 나머지(하늘)는 AI
                     canvas, pre = fill.mirror_right(canvas, covered, b["y"] + int(round(b["mirror_below_src_y"] * b["scale"])),
                                                        b["x"] + int(round(b.get("mirror_src_x0", 0) * b["scale"])))
+                if b.get("sky_right") and b.get("mirror_below_src_y"):   # 풍경 위 하늘은 색 모델+입자(AI 채움의 세로 줄무늬 방지)
+                    canvas, sky = fill.sky_right(canvas, covered, b["y"] + int(round(b["mirror_below_src_y"] * b["scale"])))
+                    pre = pre | sky
                 canvas = fill.outpaint_progressive(canvas, covered, S("compose.outpaint.step_px"), S("compose.outpaint.window_px"), pre)   # 좌우 확장을 경계에서 단계적으로
             else:
                 canvas = fill.inpaint(canvas, ~covered)   # 좌우 등 복잡한 확장은 LaMa

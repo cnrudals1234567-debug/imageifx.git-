@@ -1,0 +1,5 @@
+{"style": "photo_whole", "elements": [
+ {"id": "headline", "type": "text", "importance": "critical", "bbox": [287, 47, 1129, 296]},
+ {"id": "price_label", "type": "text", "importance": "critical", "bbox": [772, 253, 1114, 409]},
+ {"id": "price", "type": "text", "importance": "critical", "bbox": [434, 289, 1192, 727]}
+]}
