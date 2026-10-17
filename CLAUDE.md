@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # imageifx
 
 GPT로 만든 1:1 광고 이미지를 네이버 GFA(최우선), 메타, 구글 사이즈로 변환하는 내부용 도구. 로컬 CPU에서 무료로 동작한다.
@@ -20,6 +24,17 @@ GPT로 만든 1:1 광고 이미지를 네이버 GFA(최우선), 메타, 구글 �
 - `relayout <작업폴더> --tag X --preset P` 분해 캐시를 재사용해 새 배치
 - `render <작업폴더>` layout.json 수정 후 재렌더
 - `verify <최종파일> --preset P` 저장된 파일만으로 독립 검증
+
+## 테스트
+- 전체: `python -m uv run pytest -q` (31개, 약 5초, LaMa 불필요). 단일: `python -m uv run pytest tests/test_validate.py::이름 -q`
+- 시스템 `python`은 3.14라 의존성이 없다. 반드시 `python -m uv run ...`을 쓴다. json은 항상 `encoding="utf-8"`로 연다(기본 cp949로 열면 `presets.json`에서 깨짐).
+- 단위 테스트는 기준 디자인의 시각 품질을 보장하지 않는다. 코드·상수를 고친 뒤에는 `baselines/_md5_before_refactor.txt`의 md5와 `relayout`/`render` 결과를 비교해 기준이 바뀌었는지 확인한다(규칙 4).
+
+## 데이터 흐름
+`run`: 원본+분석json → `decompose.run`(글자·요소 레이어 PNG + `clean_bg.png`, LaMa) → `layout.build`(스타일 프로필+프리셋으로 `layout.json` 생성) → `cli._finish`(`compose.build_bg` 배경 확장 → `compose.render` → `_export` PNG, 용량 초과 시 JPG 품질을 낮춤 → `validate.*` → `report.json`, `debug.png`, `compare.png`).
+- 작업 폴더는 `output/<이름>/`(gitignore). `relayout`은 `clean_bg.png`·`layer_*.png`·`decompose_meta.json`을 새 폴더로 복사해 분해를 건너뛴다. `render`는 `layout.json`을 직접 읽어 다시 그린다.
+- 상수는 두 곳이 단일 출처다. 디자인 결과에 영향 주는 값은 `presets/design_spec.json`(코드에서 `spec.get("a.b")`), 매체 규격·규칙은 `presets/presets.json`, 스타일별 배치 옵션은 `presets/styles/*.json`. 코드에 매직넘버를 새로 넣지 말고 여기에 둔다.
+- `output/`의 `.log`·임시 폴더는 개발 중 남은 것이며 기준이 아니다. 기준은 `baselines/`뿐이다.
 
 ## 구조
 - `imageifx/decompose.py` 글자 영역 자동 보정, 클린 배경, 레이어 추출
