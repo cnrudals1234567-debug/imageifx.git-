@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 from PIL import Image
 
 from imageifx import cli, spec
-from . import ops, store, worker
+from . import feedback, ops, store, worker
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAX_UPLOAD = 20 * 1024 * 1024
@@ -118,7 +118,10 @@ def _size_view(j, preset):
             losts.append(row["check"].split("[")[1].split("]")[0])
     return dict(job=j, active=j["status"] in store.ACTIVE, preset=preset, pinfo=cli._presets().get(preset, {}), res=r,
                 rows=rep, can_fix=ok, why=why, ai_ok=ai_ok, ai_why=ai_why, losts=losts, total=store.sum_usage(usage),
-                fixes=[fx for fx in j["fixes"] if fx["preset"] == preset], est_ai=_avg_tokens("fix"))
+                fixes=[fx for fx in j["fixes"] if fx["preset"] == preset], est_ai=_avg_tokens("fix"),
+                feedbacks=[x for x in j["feedback"] if x["preset"] == preset],
+                fb_busy=any(x["status"] in ("queued", "running") for x in j["feedback"] if x["preset"] == preset),
+                liked=f"{j['id']}_{preset}" in [m["id"] for m in feedback.list_liked()], style=j.get("style", ""))
 
 
 @app.get("/")
@@ -304,6 +307,98 @@ def revert(jid: str, preset: str):
     store.update(jid, f)
     store.log(jid, f"{preset} 수정 {fx['n']}회차를 되돌림")
     return RedirectResponse(f"/jobs/{jid}/size/{preset}", status_code=303)
+
+
+@app.post("/jobs/{jid}/size/{preset}/feedback")
+def send_feedback(jid: str, preset: str, text: str = Form(...), scope: str = Form("style"), apply_here: str = Form("")):
+    """'이런 부분이 이상해, 앞으로 이렇게 해줘' -> 규칙 제안(AI 1회, 토큰 사용). 반영은 사용자가 미리보기를 보고 따로 누른다."""
+    j = _job(jid)
+    if j["status"] not in ("done", "fixing") or preset not in j["results"] or "error" in j["results"][preset]:
+        raise HTTPException(409, "이 사이즈 결과가 있는 완료된 작업에서만 피드백할 수 있습니다")
+    if _limit_hit():
+        raise HTTPException(409, "오늘 토큰 상한에 도달했습니다.")
+    if any(x["status"] in ("queued", "running") for x in j["feedback"] if x["preset"] == preset):
+        raise HTTPException(409, "이 사이즈의 피드백을 처리 중입니다")
+    text = text.strip()[:1000]
+    if not text:
+        raise HTTPException(400, "피드백 내용을 적어 주세요")
+    target = {"all": "", "style": j.get("style", ""), "preset": preset}.get(scope)
+    if target is None:
+        raise HTTPException(400, "알 수 없는 적용 범위입니다")
+    holder = {}
+
+    def f(x):
+        fb = {"id": max([y["id"] for y in x["feedback"]] + [0]) + 1, "preset": preset, "text": text,
+              "scope": "global" if scope == "all" else scope, "target": target, "status": "queued", "apply_here": bool(apply_here),
+              "time": store.time.strftime("%Y-%m-%d %H:%M:%S")}
+        x["feedback"].append(fb)
+        holder["fid"] = fb["id"]
+    store.update(jid, f)
+    worker.enqueue({"kind": "feedback", "job": jid, "preset": preset, "fid": holder["fid"]})
+    return RedirectResponse(f"/jobs/{jid}/size/{preset}", status_code=303)
+
+
+@app.post("/jobs/{jid}/feedback/{fid}/accept")
+def accept(jid: str, fid: int, apply_here: str = Form(""), confirm_baseline: str = Form("")):
+    err = worker.accept_feedback(jid, fid, bool(apply_here), bool(confirm_baseline))
+    if err:
+        raise HTTPException(409, err)
+    fb = next(x for x in _job(jid)["feedback"] if x["id"] == fid)
+    return RedirectResponse(f"/jobs/{jid}/size/{fb['preset']}", status_code=303)
+
+
+@app.post("/jobs/{jid}/feedback/{fid}/discard")
+def discard(jid: str, fid: int):
+    j = _job(jid)
+    fb = next((x for x in j["feedback"] if x["id"] == fid), None)
+    if not fb or fb["status"] not in ("proposed", "failed"):
+        raise HTTPException(409, "버릴 수 있는 제안이 아닙니다")
+    store.update(jid, lambda x: [y.update(status="discarded") for y in x["feedback"] if y["id"] == fid])
+    return RedirectResponse(f"/jobs/{jid}/size/{fb['preset']}", status_code=303)
+
+
+@app.post("/jobs/{jid}/size/{preset}/like")
+def like(jid: str, preset: str, note: str = Form("")):
+    """이 결과를 '좋아요'로 보관한다(토큰 0). 이후 분석·수정 에이전트가 참고한다. 다시 누르면 취소."""
+    j = _job(jid)
+    r = j["results"].get(preset)
+    if not r or "error" in r:
+        raise HTTPException(409, "결과가 없는 사이즈입니다")
+    lid = f"{jid}_{preset}"
+    if lid in [m["id"] for m in feedback.list_liked()]:
+        feedback.unlike(lid)
+    else:
+        feedback.like(j, preset, r, note.strip())
+    return RedirectResponse(f"/jobs/{jid}/size/{preset}", status_code=303)
+
+
+@app.get("/learning")
+def learning_page(request: Request):
+    return tpl.TemplateResponse(request, "learning.html", _ctx(rules=feedback.load_rules(), liked=feedback.list_liked(),
+                                                                knobs=feedback.KNOBS))
+
+
+@app.post("/learning/rules/{rid}/toggle")
+def rule_toggle(rid: str, on: str = Form("")):
+    feedback.set_enabled(rid, bool(on))
+    return RedirectResponse("/learning", status_code=303)
+
+
+@app.post("/learning/rules/{rid}/delete")
+def rule_delete(rid: str):
+    feedback.delete_rule(rid)
+    return RedirectResponse("/learning", status_code=303)
+
+
+@app.get("/learning/liked/{lid}/image")
+def liked_image(lid: str):
+    d = os.path.join(feedback.liked_dir(), lid)
+    if "/" in lid or "\\" in lid or ".." in lid or not os.path.isdir(d):
+        raise HTTPException(404)
+    for fn in os.listdir(d):
+        if fn.startswith("final"):
+            return FileResponse(os.path.join(d, fn))
+    raise HTTPException(404)
 
 
 @app.get("/jobs/{jid}/files/{path:path}")

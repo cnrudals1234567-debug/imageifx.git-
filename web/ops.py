@@ -14,9 +14,14 @@ SCALE_UP, SCALE_DOWN = 1.08, 0.92
 GROUPS = ("text", "subject")
 
 
-def run_cli(args):
+def run_cli(args, learned=None):
+    """imageifx CLI 실행. learned가 있으면 그 덮어쓰기(피드백 학습)를 이 실행에만 적용한다."""
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    env.pop("IMAGEIFX_LEARNED", None)
+    if learned:
+        env["IMAGEIFX_LEARNED"] = learned
     p = subprocess.run([sys.executable, "-m", "imageifx", *args], cwd=store.ROOT, capture_output=True, text=True,
-                       encoding="utf-8", env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+                       encoding="utf-8", env=env)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 

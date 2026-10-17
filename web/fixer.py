@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw
 from imageifx import spec
 from . import ops, store
 
+NL = chr(10)
 PROMPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 IMPORTANCE = ("critical", "movable", "decor", "band", "drop")
 MAX_SIDE = 1024          # 에이전트에게 보여 주는 이미지의 긴 변(px). 이미지 토큰 ≈ 가로×세로÷750
@@ -29,7 +30,14 @@ def analyzer_system_prompt(exclude=()):
         if os.path.exists(p):
             with open(p, encoding="utf-8") as f:
                 ex.append(f"예시 {len(ex) + 1} ({name}):" + nl + json.dumps(json.load(f), ensure_ascii=False, separators=(",", ":")))
-    return prompt_text("analyzer.md").replace("{{STYLES}}", styles).replace("{{EXAMPLES}}", (nl * 2).join(ex))
+    from . import feedback
+    for st, an in feedback.liked_analyses():   # 사용자가 좋다고 한 결과의 분석을 우선 참고 예시로 더한다
+        ex.insert(0, f"예시 (사용자가 좋다고 한 결과, 스타일 {st}):" + nl + json.dumps(an, ensure_ascii=False, separators=(",", ":")))
+    base = prompt_text("analyzer.md").replace("{{STYLES}}", styles).replace("{{EXAMPLES}}", (nl * 2).join(ex))
+    texts = feedback.rules_text("analysis")
+    if texts:
+        base += nl * 2 + "## 사용자가 승인한 규칙(반드시 따른다)" + nl + nl.join(f"- {t}" for t in texts)
+    return base
 
 
 # ---- 분석 json ----
@@ -102,9 +110,9 @@ def analyzer_message(size_small):
     return f"source.png({size_small[0]}x{size_small[1]})를 Read로 열어 요소를 분석하고 JSON 블록으로 답하라."
 
 
-# ---- AI 수정 증거 ----
-def evidence(preset_key, preset, res, request, agent_dir, tag):
-    """AI에게 줄 (프롬프트, 이미지 경로). 이미지는 안전영역·레이어 박스가 그려진 debug.png 한 장(긴 변 1024px 이하)."""
+# ---- AI 수정·피드백 증거 ----
+def _context(preset_key, preset, res, agent_dir, tag):
+    """AI에게 줄 공통 증거: (view 이미지 경로, 레이어 표, FAIL/WARN 줄, 여백 설명)."""
     wd = store.ab(res["workdir"])
     view = os.path.join(agent_dir, f"view_{tag}.png")
     make_small(os.path.join(wd, "debug.png"), view)
@@ -115,15 +123,54 @@ def evidence(preset_key, preset, res, request, agent_dir, tag):
         with open(rp, encoding="utf-8") as f:
             rows = [r for r in json.load(f) if not r["ok"] or r.get("warn")]
     rows.sort(key=lambda r: (r["ok"], r["check"]))
-    flines = "\n".join(f"- {'WARN' if r['ok'] else 'FAIL'} {r['check']}: {r['detail'][:110]}" for r in rows[:8]) or "- (없음)"
-    layers = "\n".join(f"- {L['id']} {L['type']}/{L['importance']} 박스 {ops.box(L)} 배율 {L['scale']}" for L in layout["layers"])
+    flines = NL.join(f"- {'WARN' if r['ok'] else 'FAIL'} {r['check']}: {r['detail'][:110]}" for r in rows[:8]) or "- (없음)"
+    layers = NL.join(f"- {L['id']} {L['type']}/{L['importance']} 박스 {ops.box(L)} 배율 {L['scale']}" for L in layout["layers"])
     z = preset.get("safe_zone")
     zone = f"안전영역 상{z['top']} 하{z['bottom']} 좌{z['left']} 우{z['right']}" if z else f"여백 {preset['safe_margin']['x']}px"
+    return view, layers, flines, zone
+
+
+def _learned_block(kind, style, preset_key):
+    """승인된 글 규칙과 좋아요 배치 요약(있을 때만). 토큰을 아끼려고 이미지 없이 텍스트로만 준다."""
+    from . import feedback
+    parts = []
+    texts = feedback.rules_text(kind, style, preset_key)
+    if texts:
+        parts.append("사용자가 승인한 규칙(반드시 따른다):" + NL + NL.join(f"- {t}" for t in texts))
+    liked = feedback.liked_layout_text(style, preset_key)
+    if liked:
+        parts.append("사용자가 좋다고 한 배치(참고, 비율):" + NL + liked)
+    return (NL * 2).join(parts)
+
+
+def evidence(preset_key, preset, res, request, agent_dir, tag, style=None):
+    """AI 수정에 줄 (프롬프트, 이미지 경로). 이미지는 안전영역·레이어 박스가 그려진 debug.png 한 장(긴 변 1024px 이하)."""
+    view, layers, flines, zone = _context(preset_key, preset, res, agent_dir, tag)
     ask = request.strip() or "(요청 없음: FAIL/WARN과 눈에 보이는 결함을 스스로 찾아 고쳐라)"
-    msg = (f"매체 {preset_key} {preset['size'][0]}x{preset['size'][1]}, {zone}, 최소 간격 {preset['min_gap']}px.\n"
-           f"이미지 축척: 아래 좌표는 원본 크기(캔버스) 기준이고 view_{tag}.png는 축소본이다.\n\n레이어:\n{layers}\n\n"
-           f"규정 FAIL/WARN:\n{flines}\n\n사용자 요청: {ask}\n\nview_{tag}.png를 Read로 열어 확인하고 JSON 블록으로 답하라.")
-    return msg, view
+    extra = _learned_block("fix", style, preset_key)
+    parts = [f"매체 {preset_key} {preset['size'][0]}x{preset['size'][1]}, {zone}, 최소 간격 {preset['min_gap']}px.",
+             f"이미지 축척: 아래 좌표는 원본 크기(캔버스) 기준이고 view_{tag}.png는 축소본이다.",
+             "레이어:" + NL + layers, "규정 FAIL/WARN:" + NL + flines]
+    if extra:
+        parts.append(extra)
+    parts += [f"사용자 요청: {ask}", f"view_{tag}.png를 Read로 열어 확인하고 JSON 블록으로 답하라."]
+    return (NL * 2).join(parts), view
+
+
+def feedback_message(preset_key, preset, res, text, scope, target, agent_dir, tag, style):
+    """피드백 학습 에이전트에 줄 (프롬프트, 이미지 경로)."""
+    from . import feedback
+    view, layers, flines, zone = _context(preset_key, preset, res, agent_dir, tag)
+    sv = {k: v for k, v in spec.style(style).items() if not k.startswith("_")} if style else {}
+    existing = NL.join(f"- [{r['scope']}:{r['target'] or '전체'}] {r['text']} {r['knobs'] or ''}"
+                       for r in feedback.load_rules() if r.get("enabled", True)) or "- (없음)"
+    scope_txt = {"global": "모든 소재", "style": f"스타일 {target}", "preset": f"사이즈 {target}"}[scope]
+    parts = [f"매체 {preset_key} {preset['size'][0]}x{preset['size'][1]}, {zone}. 이 소재의 스타일: {style}, 현재 스타일 값: {json.dumps(sv, ensure_ascii=False)}",
+             "레이어:" + NL + layers, "규정 FAIL/WARN:" + NL + flines, "저장된 규칙:" + NL + existing,
+             "조절 가능한 수치(이 이름만, 범위 안에서):" + NL + feedback.knob_schema_text(),
+             f"사용자 피드백(적용 범위: {scope_txt}): {text}",
+             f"view_{tag}.png를 Read로 열어 확인하고 JSON 블록으로 답하라."]
+    return (NL * 2).join(parts), view
 
 
 def parse_ai_ops(data, layout, elements):

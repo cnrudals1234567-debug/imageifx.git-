@@ -26,7 +26,7 @@ def new_id():
 def create(jid, **fields):
     os.makedirs(job_dir(jid), exist_ok=True)
     job = {"id": jid, "created": time.strftime("%Y-%m-%d %H:%M:%S"), "status": "queued", "stage": "", "error": "",
-           "results": {}, "fixes": [], "usage": [], "log": []}
+           "results": {}, "fixes": [], "feedback": [], "likes": [], "usage": [], "log": []}
     job.update(fields)
     save(job)
     return job
@@ -37,7 +37,10 @@ def load(jid):
     if not os.path.exists(p):
         return None
     with _lock, open(p, encoding="utf-8") as f:
-        return json.load(f)
+        j = json.load(f)
+    j.setdefault("feedback", [])   # 피드백 기능 이전에 만든 작업과의 호환
+    j.setdefault("likes", [])
+    return j
 
 
 def save(job):

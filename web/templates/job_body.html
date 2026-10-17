@@ -38,7 +38,7 @@
 
 <div class="card"><h2>토큰 사용량 <span class="mut">(이 작업 합계 {{ total.total|n }} · 입력 {{ total.input|n }} · 출력 {{ total.output|n }} · 캐시 생성 {{ total.cache_creation|n }} · 캐시 읽기 {{ total.cache_read|n }})</span></h2>
 {% if job.usage %}<table><tr><th>시각</th><th>단계</th><th class="r">입력</th><th class="r">출력</th><th class="r">캐시 생성</th><th class="r">캐시 읽기</th><th class="r">참고 비용(USD)</th></tr>
-{% for u in job.usage %}<tr><td>{{u.time}}</td><td>{{ '분석' if u.kind=='analyze' else 'AI 수정' }}</td><td class="r">{{u.input|n}}</td><td class="r">{{u.output|n}}</td><td class="r">{{u.cache_creation|n}}</td><td class="r">{{u.cache_read|n}}</td><td class="r">{{u.cost_usd}}</td></tr>{% endfor %}</table>
+{% for u in job.usage %}<tr><td>{{u.time}}</td><td>{{ {'analyze':'분석','fix':'AI 수정','feedback':'피드백 정리'}.get(u.kind, u.kind) }}</td><td class="r">{{u.input|n}}</td><td class="r">{{u.output|n}}</td><td class="r">{{u.cache_creation|n}}</td><td class="r">{{u.cache_read|n}}</td><td class="r">{{u.cost_usd}}</td></tr>{% endfor %}</table>
 <p class="mut">비용은 API 가격으로 환산한 참고값입니다. 구독으로 실행 중이면 실제 청구액이 아닙니다. 변환(LaMa)·사이즈 추가·빠른 조정·자동 보정은 토큰을 쓰지 않습니다.</p>{% else %}<span class="mut">아직 토큰을 쓰지 않았습니다(분석 캐시를 썼거나 대기 중).</span>{% endif %}</div>
 
 {% if job.style %}

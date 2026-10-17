@@ -6,3 +6,4 @@ work/
 *.log
 .pytest_cache/
 input/j[0-9]*.png
+feedback/

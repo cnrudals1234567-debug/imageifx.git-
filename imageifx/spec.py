@@ -14,7 +14,41 @@ def _read(path):
         return json.load(f)
 
 
+def learned():
+    """웹의 피드백 학습이 만든 덮어쓰기({"design": {점경로: 값}, "style": {키: 값}}). 환경변수 IMAGEIFX_LEARNED가 있을 때만 쓴다.
+    CLI를 직접 실행하면 없으므로 기준 디자인은 그대로 재현된다(규칙 4)."""
+    p = os.environ.get("IMAGEIFX_LEARNED")
+    if not p or not os.path.exists(p):
+        return {}
+    key = ("learned", p, os.path.getmtime(p))
+    if key not in _cache:
+        _cache[key] = _read(p)
+    return _cache[key]
+
+
+def _set_dotted(d, dotted, value):
+    node = d
+    parts = dotted.split(".")
+    for part in parts[:-1]:
+        node = node.setdefault(part, {})
+    node[parts[-1]] = value
+
+
 def spec():
+    ov = learned().get("design")
+    if ov:
+        key = ("spec+", os.environ.get("IMAGEIFX_LEARNED"), os.path.getmtime(os.environ["IMAGEIFX_LEARNED"]))
+        if key not in _cache:
+            import copy
+            d = copy.deepcopy(spec_base())
+            for k, v in ov.items():
+                _set_dotted(d, k, v)
+            _cache[key] = d
+        return _cache[key]
+    return spec_base()
+
+
+def spec_base():
     if "spec" not in _cache:
         _cache["spec"] = _read(os.path.join(ROOT, "presets", "design_spec.json"))
     return _cache["spec"]
@@ -41,7 +75,9 @@ def style(name):
     p = os.path.join(ROOT, "presets", "styles", f"{name}.json")
     if not os.path.exists(p):
         raise KeyError(f"스타일 '{name}'이 없습니다. 사용 가능: {', '.join(style_names())}")
-    return _read(p)
+    d = dict(_read(p))
+    d.update(learned().get("style", {}))   # 학습된 스타일 값(웹 전용). 기준 재현에는 영향 없음
+    return d
 
 
 def resolve_options(style_dict, preset, src_size, overrides=None):

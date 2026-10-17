@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block title %}학습된 방향{% endblock %}{% block body %}
+<h1>학습된 방향</h1>
+<p class="mut">사이즈 페이지에서 보낸 피드백 중 <b>반영</b>한 것이 규칙으로 쌓입니다. 켜 둔 규칙은 이후 업로드의 분석·배치·AI 수정에 적용되고, 끄거나 지우면 바로 빠집니다. 기준 디자인(테솔·한국어학과)은 CLI로 직접 만들 때는 이 규칙의 영향을 받지 않습니다.</p>
+
+<div class="card"><h2>규칙 ({{ rules|length }})</h2>
+{% if rules %}<table><tr><th>상태</th><th>규칙</th><th>범위</th><th>수치</th><th>적용 대상</th><th></th></tr>
+{% for r in rules %}<tr><td>{% if r.enabled %}<span class="badge ok">켜짐</span>{% else %}<span class="badge">꺼짐</span>{% endif %}</td>
+<td>{{ r.text }}<div class="mut">{{ r.created }} · {{ r.source }}</div></td>
+<td>{{ {'global':'모든 소재','style':'스타일','preset':'사이즈'}[r.scope] }}{% if r.target %} · {{ r.target }}{% endif %}</td>
+<td>{% for k, v in r.knobs.items() %}<code>{{ k.split(':')[1] }}={{ v }}</code> {% endfor %}</td>
+<td>{{ r.applies_to|join(' · ') }}</td>
+<td class="qbtns"><form method="post" action="/learning/rules/{{r.id}}/toggle"><input type="hidden" name="on" value="{{ '' if r.enabled else '1' }}"><button class="sec sm">{{ '끄기' if r.enabled else '켜기' }}</button></form>
+<form method="post" action="/learning/rules/{{r.id}}/delete"><button class="sec sm">삭제</button></form></td></tr>{% endfor %}</table>
+{% else %}<span class="mut">아직 반영한 규칙이 없습니다. 사이즈 페이지의 "이 결과 평가"에서 피드백을 보내 보세요.</span>{% endif %}</div>
+
+<div class="card"><h2>좋아요 ({{ liked|length }})</h2>
+{% if liked %}<div class="cards">{% for m in liked %}<div class="card" style="margin:0"><img src="/learning/liked/{{m.id}}/image" alt="{{m.id}}" style="width:100%;border-radius:6px"><div><b>{{ m.preset }}</b> <span class="mut">{{ m.style }}</span></div><div class="mut">{{ m.note }} · FAIL {{ m.fails }} · {{ m.time }}</div></div>{% endfor %}</div>
+<p class="mut">좋아요 분석 json은 이후 분석 예시로, 배치는 AI 수정의 참고(비율 숫자)로 쓰입니다. 이미지를 통째로 보내지 않아 토큰이 거의 늘지 않습니다.</p>
+{% else %}<span class="mut">아직 없습니다. 마음에 드는 결과 페이지에서 👍를 눌러 주세요.</span>{% endif %}</div>
+
+<div class="card"><h2>에이전트가 조절할 수 있는 수치</h2><table>{% for k, v in knobs.items() %}<tr><td><code>{{ k }}</code></td><td>{{ v[1] }} ~ {{ v[2] }}</td><td class="mut">{{ v[3] }}</td></tr>{% endfor %}</table>
+<p class="mut">이 목록 밖의 값, 범위 밖의 값, 글자 내용·폰트·규정(안전영역·용량·크기)을 바꾸는 규칙은 저장되지 않습니다.</p></div>
+{% endblock %}

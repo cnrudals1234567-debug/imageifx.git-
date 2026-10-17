@@ -34,9 +34,15 @@ def _write_files(wd):
     return 0 if all(r["ok"] for r in rows) else 1
 
 
-def _make(wd, name, preset, elements):
+def _make(wd, name, preset, elements, learned=None):
     os.makedirs(wd, exist_ok=True)
-    layers = [{"id": "title", "type": "text", "importance": "critical", "src_bbox": [0, 0, 100, 40], "scale": 1.0, "x": TITLE_X[0], "y": 100},
+    tx = TITLE_X[0]
+    if learned:   # 학습 덮어쓰기: text_scale 1.1 -> x=66(PASS), 0.5 -> x=30(안전영역 48 밖, FAIL)
+        with open(learned, encoding="utf-8") as f:
+            ts = json.load(f).get("style", {}).get("text_scale")
+        if ts is not None:
+            tx = int(ts * 60)
+    layers = [{"id": "title", "type": "text", "importance": "critical", "src_bbox": [0, 0, 100, 40], "scale": 1.0, "x": tx, "y": 100},
               {"id": "owl", "type": "subject", "importance": "critical", "src_bbox": [0, 0, 200, 200], "scale": 1.0, "x": 300, "y": 600}]
     with open(os.path.join(wd, "layout.json"), "w", encoding="utf-8") as f:
         json.dump({"bg": {"scale": 1, "x": 0, "y": 0}, "layers": layers, "preset": preset, "name": name, "canvas": [1080, 1080]}, f)
@@ -48,7 +54,7 @@ def _make(wd, name, preset, elements):
 
 
 def fake_cli_factory(log):
-    def fake_cli(args):
+    def fake_cli(args, learned=None):
         log.append(args[0])
         pr = args[args.index("--preset") + 1] if "--preset" in args else None
         if args[0] == "run":
@@ -56,7 +62,7 @@ def fake_cli_factory(log):
             name = f"{jid}_{pr}"
             with open(args[2], encoding="utf-8") as f:
                 els = json.load(f)["elements"]
-            _make(os.path.join(store.OUT, name), name, pr, els)
+            _make(os.path.join(store.OUT, name), name, pr, els, learned)
             return _write_files(os.path.join(store.OUT, name)), "출력: x"
         if args[0] == "relayout":
             base, tag = args[1], args[args.index("--tag") + 1]
@@ -65,7 +71,7 @@ def fake_cli_factory(log):
             with open(os.path.join(base, "elements.json"), encoding="utf-8") as f:
                 els = json.load(f)["elements"]
             wd = os.path.join(store.OUT, name)
-            _make(wd, name, pr or old["preset"], els)
+            _make(wd, name, pr or old["preset"], els, learned)
             return _write_files(wd), "출력: x"
         return _write_files(args[1]), "출력: x"   # render
     return fake_cli
@@ -86,11 +92,18 @@ def env(tmp_path, monkeypatch):
         bad_first = False
         ai_ops = [{"op": "move", "group": "text", "dx": 60, "dy": 0}]
         elements = [{"id": "title", "type": "text", "importance": "critical", "bbox": [10, 10, 200, 80]}]
+        fb_rules = [{"text": "제목을 더 크게", "scope": "global", "applies_to": ["layout"], "knobs": {"style:text_scale": 1.1}}]
+        last_feedback_prompt = ""
     e = E()
     e.calls, e.cli_calls = [], []
 
     def fake_claude(prompt, **kw):
         usage = {"input": 10, "output": 20, "cache_read": 1000, "cache_creation": 30}
+        if "사용자 피드백" in prompt:   # 피드백 학습 에이전트
+            e.calls.append("feedback")
+            e.last_feedback_prompt = prompt
+            return {"text": "```json\n" + json.dumps({"rules": e.fb_rules, "notes": "정리함"}) + "\n```", "usage": usage, "cost": 0.1,
+                    "ms": 10, "turns": 2, "is_error": False, "aborted": False}
         if "source.png" in prompt:   # 분석
             e.calls.append("analyze")
             data = {"style": "dark_board", "elements": e.elements}
@@ -110,9 +123,14 @@ def env(tmp_path, monkeypatch):
 
     def run_sync(t):   # 실제 워커 루프(_loop)와 같이 작업 단위로 예외를 가둔다
         try:
-            {"analyze": worker.do_analyze, "convert": worker.do_convert, "fix": worker.do_fix}[t["kind"]](t)
+            {"analyze": worker.do_analyze, "convert": worker.do_convert, "fix": worker.do_fix, "feedback": worker.do_feedback}[t["kind"]](t)
         except Exception as ex:
-            worker._fail(t["job"], f"{type(ex).__name__}: {ex}", fix_n=t.get("n"))
+            import traceback
+            traceback.print_exc()
+            if t["kind"] == "feedback":
+                worker._fail_feedback(t["job"], t["fid"], f"{type(ex).__name__}: {ex}")
+            else:
+                worker._fail(t["job"], f"{type(ex).__name__}: {ex}", fix_n=t.get("n"))
     monkeypatch.setattr(worker, "enqueue", run_sync)
     e.real_auto = worker._auto_tune_new
     monkeypatch.setattr(worker, "_auto_tune_new", lambda jid, presets: None)   # 기본은 끔(처음 FAIL 상태를 검증하기 위해)
