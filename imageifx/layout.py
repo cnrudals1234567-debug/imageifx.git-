@@ -187,25 +187,34 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     return layout
 
 
+def _margins(preset):
+    """(좌, 상, 우, 하) 여백 px. safe_zone이 있으면 방향별 값을 쓰고, 없으면 예전 동작(좌우·하단 safe_margin.x, 상단 0)을 유지한다."""
+    z = preset.get("safe_zone")
+    if z:
+        return z["left"], z["top"], z["right"], z["bottom"]
+    m = preset["safe_margin"]["x"]
+    return m, 0, m, m
+
+
 def auto_free(elements, src_size, preset, **_):
     """세로/정사각용 자유 배치. 원본의 요소 배열을 유지한 채 균등 축소하여 우하단 기준으로 앉힘.
     배경은 cover + 원본 오른쪽/아래 기준으로 crop (글자가 원래 놓여 있던 흰 영역을 그대로 활용)."""
     W, H = preset["size"]
-    m = preset["safe_margin"]["x"]
+    ml, mt, mr, mb = _margins(preset)
     sw, sh = src_size
     crit = [e for e in elements if e["importance"] == "critical"]
     u = _union([e["bbox"] for e in crit])
     uw, uh = u[2] - u[0], u[3] - u[1]
-    f = min(1.0, (W - 2 * m) / uw, (H - m) / uh)
+    f = min(1.0, (W - ml - mr) / uw, (H - mt - mb) / uh)
 
     s = max(W / sw, H / sh)
     bx = min(0, W - int(round(sw * s)))            # 오른쪽 기준 crop
     by = min(0, H - int(round(sh * s)))            # 아래 기준 crop
     layout = {"bg": {"scale": s, "x": bx, "y": by}, "layers": []}
 
-    right = W - m
+    right = W - mr
     bottom_bleed = any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") and e["type"] != "text" for e in crit)
-    bottom = H if bottom_bleed else H - m
+    bottom = H if bottom_bleed else H - mb
     for e in crit:
         b = e["bbox"]
         layout["layers"].append({
@@ -220,6 +229,15 @@ def auto_free(elements, src_size, preset, **_):
         dy = H - max(round(L["y"] + (L["src_bbox"][3] - L["src_bbox"][1]) * L["scale"]) for L in sub)
         for L in layout["layers"]:
             L["y"] += dy
+    # 원본에서 글자와 피사체의 bbox가 이미 맞닿아 있던 배열(모자 꼭대기가 제목 밑줄 높이에 걸리는 식)은 bbox 간격이 아니라
+    # 실제 피사체 실루엣 기준으로 검사한다(validate.check_clearance). 실루엣이 가까우면 거기서 FAIL이 난다.
+    def _bx(L):
+        x0, y0, x1, y1 = L["src_bbox"]
+        return [L["x"], L["y"], L["x"] + round((x1 - x0) * L["scale"]), L["y"] + round((y1 - y0) * L["scale"])]
+    gap = preset["min_gap"]
+    for L in layout["layers"]:
+        if L["type"] != "text" and any(_overlap(_bx(L), _bx(T), gap) for T in layout["layers"] if T["type"] == "text"):
+            L["overlap_ok"] = True
     return layout
 
 
@@ -228,9 +246,10 @@ def build(elements, src_size, preset, style_dict=None, overrides=None, style_nam
     배치 옵션은 스타일 프로필(소재 유형별)에서 오고, 사람이 CLI로 준 덮어쓰기는 layout['overrides']에 기록한다."""
     W, H = preset["size"]
     opts = _spec.resolve_options(style_dict or {}, preset, src_size, overrides)
-    if preset.get("mode") == "free" and H / W >= 1.6:
+    kind = preset.get("layout") or preset.get("mode")   # layout: 배치 방식, mode: 규정 계열. 정사각 GFA 피드는 규정은 gfa, 배치는 free
+    if kind == "free" and H / W >= 1.6:
         lay = auto_stack(elements, src_size, preset, **preset.get("stack", {}))
-    elif preset.get("mode") == "free" and W / H < 1.3:
+    elif kind == "free" and W / H < 1.3:
         lay = auto_free(elements, src_size, preset)
     else:
         lay = auto_gfa(elements, src_size, preset, opts["text_side"], bg_top=opts["bg_top"],
@@ -259,7 +278,8 @@ def auto_stack(elements, src_size, preset, text_top=700, text_up=1.4, person_up=
     글자 블록은 중앙, 피사체는 좌하단 bleed. 어떤 요소도 crop하지 않는다.
     띠(importance=band)가 있으면: 피사체는 띠 윗면에 서고, group=footer 문구는 띠 안에 가운데 정렬한다."""
     W, H = preset["size"]
-    m = preset["safe_margin"]["x"]
+    ml, mt, mr, mb = _margins(preset)
+    m = ml
     gap = preset["min_gap"]
     sw, sh = src_size
     crit = [e for e in elements if e["importance"] == "critical"]
@@ -277,13 +297,17 @@ def auto_stack(elements, src_size, preset, text_top=700, text_up=1.4, person_up=
         layout["floor"] = {"y": floor_y, "src_y": band_el["bbox"][1]}
 
     ut = _union([e["bbox"] for e in texts])
-    ft = min(text_up, (W - 2 * m) / (ut[2] - ut[0]))
+    ft = min(text_up, (W - ml - mr) / (ut[2] - ut[0]))
     text_h = (ut[3] - ut[1]) * ft
     fp_band = None
     if band_el and subjs:   # 띠가 있으면 인물 크기를 먼저 정하고, 글자는 그 위에 쌓는다
         up0 = _union([e["bbox"] for e in subjs])
-        fp_band = min(person_up, (W - 2 * m) / (up0[2] - up0[0]), 0.4 * H / (up0[3] - up0[1]))
+        fp_band = min(person_up, (W - ml - mr) / (up0[2] - up0[0]), 0.4 * H / (up0[3] - up0[1]))
         text_top = min(text_top, floor_y - (up0[3] - up0[1]) * fp_band - gap - text_h)
+    text_top = max(text_top, mt)   # 상단 안전영역(safe_zone이 없으면 mt=0이라 그대로)
+    sz_b = preset["safe_zone"]["bottom"] if preset.get("safe_zone") else 0   # 하단 안전영역은 safe_zone이 있을 때만(기존 프리셋 결과 유지)
+    if sz_b and text_top + text_h > floor_y - sz_b:   # 글자 블록이 넘으면 위로 올린다
+        text_top = max(mt, floor_y - sz_b - text_h)
     t_bottom = text_top + text_h
     for e in texts:
         b = e["bbox"]
@@ -298,7 +322,7 @@ def auto_stack(elements, src_size, preset, text_top=700, text_up=1.4, person_up=
         on_band = bool(band_el) and any(e["bbox"][3] >= band_el["bbox"][1] - 3 for e in subjs)
         bleed = (not on_band) and any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") for e in subjs)
         base = floor_y if on_band else H
-        fp = min(person_up, (W - 2 * m) / uw, (base - t_bottom - gap) / uh)   # 글자와 겹치지 않게
+        fp = min(person_up, (W - ml - mr) / uw, (base - t_bottom - gap) / uh)   # 글자와 겹치지 않게
         top = (base - uh * fp) if (bleed or on_band) else (H - m - uh * fp)
         start = len(layout["layers"])
         for e in subjs:
