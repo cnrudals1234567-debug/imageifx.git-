@@ -1,4 +1,8 @@
-"""GFA 모드 자동 배치. 결과는 정수 px 좌표의 layout.json (이후 사람이 px 단위로 수정)."""
+"""GFA 모드 자동 배치. 결과는 정수 px 좌표의 layout.json (이후 사람이 px 단위로 수정).
+디자인 상수는 presets/design_spec.json, 소재 유형별 값은 presets/styles/*.json 에서 읽는다."""
+from . import spec as _spec
+
+S = _spec.get
 
 
 def _union(boxes):
@@ -6,23 +10,44 @@ def _union(boxes):
             max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
-def _align_dx(texts, tol=0.10):
+def _align_dx(texts, tol=None):
     """중앙 정렬 디자인에서 중심이 크게 어긋난 줄만 가운데로 당길 이동량(원본 px)을 돌려줌.
-    좌측 정렬 디자인(왼쪽 끝이 더 가지런함)은 건드리지 않는다."""
+    좌측 정렬 디자인(왼쪽 끝이 더 가지런함)은 건드리지 않는다.
+    같은 높이에 나란히 있는 요소(예: 알약 두 개)는 한 줄로 묶어 같이 움직인다(따로 움직이면 서로 겹침)."""
     import statistics as st
+    if tol is None:
+        tol = S("layout.align_tolerance")
     if len(texts) < 3:
         return {}
-    cs = [(e["bbox"][0] + e["bbox"][2]) / 2 for e in texts]
-    ls = [e["bbox"][0] for e in texts]
+    rows = []
+    for e in sorted(texts, key=lambda e: e["bbox"][1]):
+        for r in rows:
+            ov = min(e["bbox"][3], r["y1"]) - max(e["bbox"][1], r["y0"])
+            if ov > 0.5 * min(e["bbox"][3] - e["bbox"][1], r["y1"] - r["y0"]):
+                r["els"].append(e)
+                r["y0"], r["y1"] = min(r["y0"], e["bbox"][1]), max(r["y1"], e["bbox"][3])
+                break
+        else:
+            rows.append({"els": [e], "y0": e["bbox"][1], "y1": e["bbox"][3]})
+    if len(rows) < 3:
+        return {}
+    spans = [(min(e["bbox"][0] for e in r["els"]), max(e["bbox"][2] for e in r["els"])) for r in rows]
+    cs = [(a + b) / 2 for a, b in spans]
+    ls = [a for a, _ in spans]
     if st.pstdev(cs) >= st.pstdev(ls):
         return {}
     med = st.median(cs)
-    uw = max(e["bbox"][2] for e in texts) - min(e["bbox"][0] for e in texts)
-    return {e["id"]: med - c for e, c in zip(texts, cs) if abs(c - med) > tol * uw}
+    uw = max(b for _, b in spans) - min(a for a, _ in spans)
+    out = {}
+    for r, c in zip(rows, cs):
+        if abs(c - med) > tol * uw:
+            for e in r["els"]:
+                out[e["id"]] = med - c
+    return out
 
 
 def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
-             text_scale=1.0, person_h=None, scrim=False):
+             text_scale=1.0, person_h=None, scrim=False, text_width_ratio=None, text_v_ratio=None):
     """bg_top: 캔버스 맨 위에 올 원본 y좌표(콜라주를 얼마나 보일지). None이면 필수요소 중심 자동.
     text_scale: 글자 최대 배율. person_h: 피사체 최대 높이(px). scrim: 글자 뒤 흰 스크림."""
     W, H = preset["size"]
@@ -37,7 +62,10 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     safe_w, safe_h = sx1 - sx0, sy1 - sy0
 
     crit = [e for e in elements if e["importance"] == "critical"]
-    texts = [e for e in crit if e["type"] == "text"]
+    band_el = next((e for e in elements if e["importance"] == "band"), None)   # 하단 안내 띠(전체 폭)
+    all_texts = [e for e in crit if e["type"] == "text"]
+    footer = [e for e in all_texts if e.get("group") == "footer"] if band_el else []   # 띠 안에 넣을 안내 문구
+    texts = [e for e in all_texts if e not in footer]
     subjs = [e for e in crit if e["type"] != "text"]
 
     # 배경: cover 방식 (캔버스를 가득 채움 -> 확장 불필요), 세로는 필수요소 중심으로 crop
@@ -47,6 +75,10 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     by = min(0, max(H - int(round(sh * s)), by))
     bx = int(round((W - sw * s) / 2))
     layout = {"bg": {"scale": s, "x": bx, "y": by}, "layers": []}
+    band_h = round((band_el["bbox"][3] - band_el["bbox"][1]) * s) if band_el else 0
+    floor_y = H - band_h   # 글자·피사체가 서는 바닥(띠가 있으면 띠 윗면)
+    if band_el:
+        layout["band"] = {"src_bbox": band_el["bbox"], "h": band_h}
 
     def place(group, x_left, x_right, align):
         """group을 [x_left,x_right] 안에 세로 중앙 정렬로 배치. 균등 축소만 사용."""
@@ -56,14 +88,17 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
         u = _union([[e["bbox"][0] + dxs.get(e["id"], 0), e["bbox"][1], e["bbox"][2] + dxs.get(e["id"], 0), e["bbox"][3]] for e in group])
         uw, uh = u[2] - u[0], u[3] - u[1]
         # 원본 아래 끝에 걸려 있던 피사체는 직선으로 잘려 보이지 않게 캔버스 하단으로 bleed
-        bleed_b = group[0]["type"] != "text" and any(e["bbox"][3] >= sh - 2 for e in group)
-        avail_h = (H - sy0) if bleed_b else safe_h
+        on_band = bool(band_el) and group[0]["type"] != "text" and any(e["bbox"][3] >= band_el["bbox"][1] - 3 for e in group)
+        bleed_b = group[0]["type"] != "text" and not on_band and any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") for e in group)
+        region_h = min(safe_h, floor_y - sy0) if band_el else safe_h
+        avail_h = (floor_y - sy0) if on_band else ((H - sy0) if bleed_b else region_h)
         is_text = group[0]["type"] == "text"
         cap = text_scale if is_text else ((person_h / uh) if person_h else 99)
         sc = min((x_right - x_left) / uw, avail_h / uh, cap)
         pw, ph = uw * sc, uh * sc
         ox = x_left if align == "left" else x_right - pw
-        oy = (H - ph) if bleed_b else sy0 + (safe_h - ph) / 2
+        vr = 0.5 if (not is_text or text_v_ratio is None) else text_v_ratio   # 글자 블록의 세로 위치(0=위, 0.5=가운데)
+        oy = (floor_y - ph) if on_band else ((H - ph) if bleed_b else sy0 + (region_h - ph) * vr)
         start = len(layout["layers"])
         for e in group:
             b = e["bbox"]
@@ -73,6 +108,7 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
                 "x": int(round(ox + (b[0] + dxs.get(e["id"], 0) - u[0]) * sc)),
                 "y": int(round(oy + (b[1] - u[1]) * sc)),
                 **({"bleed": ["bottom"]} if bleed_b else {}),
+                **({"on_band": True} if on_band else {}),
             })
         if bleed_b:  # 반올림 오차로 1px 틈이 생기지 않게 하단을 캔버스 끝에 정확히 맞춤
             new = layout["layers"][start:]
@@ -81,17 +117,28 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
                 L["y"] += dy
 
     if texts and subjs and sz:
-        text_w = int(safe_w * 0.62)
-        edge = 24   # 피사체는 안전영역 밖(가장자리)까지 사용 가능
+        text_w = int(safe_w * (text_width_ratio or S("layout.text_width_ratio.safe_zone")))
+        edge = S("layout.subject_edge_px")   # 피사체는 안전영역 밖(가장자리)까지 사용 가능
         if text_side == "left":
-            place(texts, sx0, sx0 + text_w, "left")
-            place(subjs, sx0 + text_w + gap, W - edge, "right")
+            ov_src = max([e.get("text_overlap_src_px", 0) for e in subjs] + [0])
+            if ov_src:
+                # 인물 bbox 왼쪽 위의 빈 공간(노트북 때문에 생김)까지 글자 영역을 넓힌다. 인물 위치(얼굴)는 그대로 둔다.
+                # bbox 간격 대신 실제 인물 실루엣 기준 간격을 validate.check_clearance가 검사한다.
+                place(subjs, sx0 + text_w + gap, W - edge, "left")
+                sub_layers = [L for L in layout["layers"] if L["type"] != "text"]
+                for L in sub_layers:
+                    L["overlap_ok"] = True
+                wide = int(min(L["x"] for L in sub_layers) + ov_src * sub_layers[0]["scale"] - gap - sx0)
+                place(texts, sx0, sx0 + max(text_w, min(wide, sx1 - sx0)), "left")
+            else:
+                place(texts, sx0, sx0 + text_w, "left")
+                place(subjs, sx0 + text_w + gap, W - edge, "left")   # 글자 쪽에 붙여 안전영역 안 비율 확보
         else:
-            zpad = 16   # 안전영역 경계에 딱 붙으면 기기별 반올림 오차로 넘을 수 있어 안쪽으로 띄움
+            zpad = S("layout.zone_pad_px")   # 안전영역 경계에 딱 붙으면 기기별 반올림 오차로 넘을 수 있어 안쪽으로 띄움
             place(subjs, edge, sx1 - zpad - text_w - gap, "right")   # 글자 쪽으로 붙여 안전영역 안 비율 확보
             place(texts, sx1 - zpad - text_w, sx1 - zpad, "right")
     elif texts and subjs:
-        text_w = int(safe_w * 0.48)
+        text_w = int(safe_w * S("layout.text_width_ratio.safe_margin"))
         if text_side == "left":
             place(texts, sx0, sx0 + text_w, "left")
             place(subjs, sx0 + text_w + gap, sx1, "right")
@@ -101,13 +148,28 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     else:
         place(texts or subjs, sx0, sx1, "left")
 
+    if footer:   # 안내 문구는 띠 안에 가운데 정렬, 안전영역 폭에 맞춰 축소
+        uf = _union([e["bbox"] for e in footer])
+        fw, fh = uf[2] - uf[0], uf[3] - uf[1]
+        bp = S("layout.band_text_pad_px")
+        region = min(band_h, sy1 - floor_y)   # 띠 안에서도 안전영역 아래 여백을 지킨다
+        fsc = min((sx1 - sx0) / fw, (region - 2 * bp) / fh, 1.0)
+        fx = sx0 + ((sx1 - sx0) - fw * fsc) / 2
+        fy = floor_y + (region - fh * fsc) / 2
+        for e in footer:
+            b = e["bbox"]
+            layout["layers"].append({"id": e["id"], "type": "text", "importance": "critical", "src_bbox": b,
+                                     "scale": round(fsc, 4), "x": int(round(fx + (b[0] - uf[0]) * fsc)),
+                                     "y": int(round(fy + (b[1] - uf[1]) * fsc)), "group": "footer"})
+
     if scrim and texts:
         tl = [L for L in layout["layers"] if L["type"] == "text"]
         bx0 = min(L["x"] for L in tl); by0 = min(L["y"] for L in tl)
         bx1 = max(L["x"] + round((L["src_bbox"][2] - L["src_bbox"][0]) * L["scale"]) for L in tl)
         by1 = max(L["y"] + round((L["src_bbox"][3] - L["src_bbox"][1]) * L["scale"]) for L in tl)
-        pad = 40
-        layout["scrim"] = {"box": [bx0 - pad, by0 - pad, bx1 + pad, by1 + pad], "alpha": 0.95, "feather": 36}
+        pad = S("scrim.pad_px")
+        layout["scrim"] = {"box": [bx0 - pad, by0 - pad, bx1 + pad, by1 + pad],
+                           "alpha": S("scrim.alpha"), "feather": S("scrim.feather_px")}
     return layout
 
 
@@ -128,7 +190,7 @@ def auto_free(elements, src_size, preset, **_):
     layout = {"bg": {"scale": s, "x": bx, "y": by}, "layers": []}
 
     right = W - m
-    bottom_bleed = any(e["bbox"][3] >= sh - 2 and e["type"] != "text" for e in crit)
+    bottom_bleed = any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") and e["type"] != "text" for e in crit)
     bottom = H if bottom_bleed else H - m
     for e in crit:
         b = e["bbox"]
@@ -147,19 +209,26 @@ def auto_free(elements, src_size, preset, **_):
     return layout
 
 
-def build(elements, src_size, preset, text_side="right", **opts):
-    """프리셋의 mode/비율에 맞는 배치 함수 선택. opts가 None이면 프리셋 defaults 사용."""
+def build(elements, src_size, preset, style_dict=None, overrides=None, style_name=None):
+    """프리셋의 mode/비율에 맞는 배치 함수를 고른다.
+    배치 옵션은 스타일 프로필(소재 유형별)에서 오고, 사람이 CLI로 준 덮어쓰기는 layout['overrides']에 기록한다."""
     W, H = preset["size"]
-    merged = {**preset.get("defaults", {}), **{k: v for k, v in opts.items() if v not in (None, False)}}
-    if merged.get("scrim") == "off":
-        merged["scrim"] = False
+    opts = _spec.resolve_options(style_dict or {}, preset, src_size, overrides)
     if preset.get("mode") == "free" and H / W >= 1.6:
-        lay = auto_stack(elements, src_size, preset, **preset.get("defaults", {}))
+        lay = auto_stack(elements, src_size, preset, **preset.get("stack", {}))
     elif preset.get("mode") == "free" and W / H < 1.3:
         lay = auto_free(elements, src_size, preset)
     else:
-        lay = auto_gfa(elements, src_size, preset, text_side, **merged)
-    return place_movable(lay, elements, preset)
+        lay = auto_gfa(elements, src_size, preset, opts["text_side"], bg_top=opts["bg_top"],
+                       text_scale=opts["text_scale"], person_h=opts["person_h"], scrim=opts["scrim"],
+                       text_width_ratio=opts["text_width_ratio"], text_v_ratio=opts["text_v_ratio"])
+    lay = place_movable(lay, elements, preset)
+    if style_name:
+        lay["style"] = style_name
+    given = {k: v for k, v in (overrides or {}).items() if v is not None}
+    if given:
+        lay["overrides"] = given   # 스타일에서 벗어난 수동 조정은 기록해 보고서에 경고로 드러낸다
+    return lay
 
 
 def auto_stack(elements, src_size, preset, text_top=700, text_up=1.4, person_up=1.1, **_):
@@ -188,7 +257,7 @@ def auto_stack(elements, src_size, preset, text_top=700, text_up=1.4, person_up=
     if subjs:
         up = _union([e["bbox"] for e in subjs])
         uw, uh = up[2] - up[0], up[3] - up[1]
-        bleed = any(e["bbox"][3] >= sh - 2 for e in subjs)
+        bleed = any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") for e in subjs)
         fp = min(person_up, (W - 2 * m) / uw, (H - t_bottom - gap) / uh)   # 글자와 겹치지 않게
         top = (H - uh * fp) if bleed else (H - m - uh * fp)
         start = len(layout["layers"])
@@ -210,9 +279,13 @@ def _overlap(a, b, pad=0):
     return not (a[2] + pad <= b[0] or b[2] + pad <= a[0] or a[3] + pad <= b[1] or b[3] + pad <= a[1])
 
 
-def place_movable(layout, elements, preset, decor_scale=0.65, gap=28, margin=12):
+def place_movable(layout, elements, preset, decor_scale=None, gap=None, margin=None):
     """movable(재배치 가능한 장식) 배치. 배경과 같은 위치(in_place)에 보이고 필수요소와 안 겹치면 그대로,
     아니면 가장 가까운 빈자리로 이동(relocated). 자리가 없으면 레이어를 만들지 않음 -> 인벤토리에서 LOST로 보고."""
+    decor_scale = S("movable.decor_scale") if decor_scale is None else decor_scale
+    gap = S("movable.gap_px") if gap is None else gap
+    margin = S("movable.margin_px") if margin is None else margin
+    grid = S("movable.grid_step_px")
     W, H = preset["size"]
     bg = layout["bg"]
     s, bx, by = bg["scale"], bg["x"], bg["y"]
@@ -232,15 +305,15 @@ def place_movable(layout, elements, preset, decor_scale=0.65, gap=28, margin=12)
             pos, sc, mode = (mx, my), s, "in_place"
         else:
             pos = None
-            for sc in (min(s, decor_scale), min(s, decor_scale) * 0.8, min(s, decor_scale) * 0.65):
+            for sc in [min(s, decor_scale) * k for k in S("movable.scale_steps")]:
                 wi, hi = round(w * sc), round(h * sc)
                 tx = min(max(mx, margin), W - margin - wi)
                 ty = min(max(my, margin), H - margin - hi)
                 best = None
                 # stay_y: 받침대 위 소품처럼 높이가 의미 있는 요소는 가로로만 이동 (허공에 뜨는 것 방지)
-                ys = [min(max(my, margin), H - margin - hi)] if e.get("stay_y") else range(margin, H - margin - hi + 1, 8)
+                ys = [min(max(my, margin), H - margin - hi)] if e.get("stay_y") else range(margin, H - margin - hi + 1, grid)
                 for yy in ys:
-                    for xx in range(margin, W - margin - wi + 1, 8):
+                    for xx in range(margin, W - margin - wi + 1, grid):
                         c = [xx, yy, xx + wi, yy + hi]
                         if any(_overlap(c, t, gap) for t in taken):
                             continue

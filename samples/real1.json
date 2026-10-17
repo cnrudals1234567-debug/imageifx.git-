@@ -1,8 +1,71 @@
-{"elements": [
- {"id": "school", "type": "text", "importance": "critical", "bbox": [685, 728, 1020, 762]},
- {"id": "headline", "type": "text", "importance": "critical", "bbox": [662, 770, 1152, 975]},
- {"id": "tagline", "type": "text", "importance": "critical", "bbox": [665, 985, 1078, 1032]},
- {"id": "recruit", "type": "text", "importance": "critical", "bbox": [665, 1042, 1152, 1098]},
- {"id": "period", "type": "text", "importance": "critical", "bbox": [662, 1100, 1152, 1150]},
- {"id": "person", "type": "subject", "importance": "critical", "bbox": [30, 650, 600, 1202]}
-]}
+{
+ "style": "photo_collage",
+ "elements": [
+  {
+   "id": "school",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    685,
+    728,
+    1020,
+    762
+   ]
+  },
+  {
+   "id": "headline",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    662,
+    770,
+    1152,
+    975
+   ]
+  },
+  {
+   "id": "tagline",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    665,
+    985,
+    1078,
+    1032
+   ]
+  },
+  {
+   "id": "recruit",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    665,
+    1042,
+    1152,
+    1098
+   ]
+  },
+  {
+   "id": "period",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    662,
+    1100,
+    1152,
+    1150
+   ]
+  },
+  {
+   "id": "person",
+   "type": "subject",
+   "importance": "critical",
+   "bbox": [
+    30,
+    650,
+    600,
+    1202
+   ]
+  }
+ ]
+}

@@ -3,6 +3,9 @@ import hashlib, json, os
 import numpy as np
 from PIL import Image, ImageDraw
 from . import fill
+from . import spec as _spec
+
+S = _spec.get
 
 
 def _scaled_size(w, h, s):
@@ -18,11 +21,12 @@ def _extend_rows(canvas: Image.Image, rows) -> Image.Image:
     last = rows.size - 1 - int(rows[::-1].argmax())
     def band(lo, hi):
         m = a[lo:hi].astype(np.float32).mean(axis=0, keepdims=True)
-        return cv2.GaussianBlur(m, (0, 0), sigmaX=30)  # 가로로만 완만하게
+        return cv2.GaussianBlur(m, (0, 0), sigmaX=S("compose.extend_rows.sigma_px"))  # 가로로만 완만하게
     if last < rows.size - 1:
-        a[last + 1:] = band(max(first, last - 29), last + 1)
+        band_rows = S("compose.extend_rows.band_rows")
+        a[last + 1:] = band(max(first, last - (band_rows - 1)), last + 1)
     if first > 0:
-        a[:first] = band(first, min(last + 1, first + 30))
+        a[:first] = band(first, min(last + 1, first + band_rows))
     return Image.fromarray(a)
 
 
@@ -30,7 +34,7 @@ def build_bg(clean: Image.Image, layout, cache_dir=None):
     W, H = layout["canvas"]
     b = layout["bg"]
     # 클린 배경 내용까지 키에 포함해야 분해 결과가 바뀌었을 때 낡은 캐시를 쓰지 않음
-    h = hashlib.md5(json.dumps([W, H, b], sort_keys=True).encode())
+    h = hashlib.md5(json.dumps([W, H, b] + ([layout["band"]] if layout.get("band") else []), sort_keys=True).encode())
     h.update(clean.tobytes())
     key = h.hexdigest()[:10]
     cpath = os.path.join(cache_dir, f"bg_{key}.png") if cache_dir else None
@@ -50,6 +54,11 @@ def build_bg(clean: Image.Image, layout, cache_dir=None):
             canvas = _extend_rows(canvas, rows)   # 위/아래 띠만 비었을 때: 가장자리 색을 이어붙임
         else:
             canvas = fill.inpaint(canvas, ~covered)   # 좌우 등 복잡한 확장은 LaMa
+    band = layout.get("band")
+    if band:   # 하단 띠: 클린 배경의 띠 영역을 폭에 맞춰 캔버스 아래에 붙인다(글자는 이미 제거돼 있음)
+        x0, y0, x1, y1 = band["src_bbox"]
+        strip = clean.crop((x0, y0, x1, y1)).resize((W, band["h"]), Image.LANCZOS)
+        canvas.paste(strip, (0, H - band["h"]))
     if cpath:
         canvas.save(cpath)
     return canvas
@@ -61,7 +70,7 @@ def _scrim(size, sc):
     W, H = size
     x0, y0, x1, y1 = sc["box"]
     m = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(m).rounded_rectangle([x0, y0, x1, y1], radius=40, fill=int(255 * sc["alpha"]))
+    ImageDraw.Draw(m).rounded_rectangle([x0, y0, x1, y1], radius=S("scrim.corner_radius_px"), fill=int(255 * sc["alpha"]))
     m = m.filter(ImageFilter.GaussianBlur(sc["feather"] / 2))
     out = Image.new("RGBA", (W, H), (255, 255, 255, 0))
     out.putalpha(m)

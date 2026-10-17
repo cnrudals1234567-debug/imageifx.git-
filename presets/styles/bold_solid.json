@@ -1,0 +1,11 @@
+{
+  "_doc": "단색(주황 등) 배경 위에 굵은 큰 글씨 + 인물이 있는 소재(첫 소재: 일반대학원 AI&English). 흰 글씨가 많으므로 스크림을 끈다. 배경은 위쪽(단색 영역) 기준. 아직 baseline이 없는 시험 단계 프로필이다.",
+  "text_side": "left",
+  "scrim": false,
+  "text_scale": 0.78,
+  "person_h_ratio": 0.68,
+  "bg_top_ratio": 0.0,
+  "text_width_ratio": 0.5,
+  "text_mask": "glyph",
+  "text_v_ratio": 0.35
+}

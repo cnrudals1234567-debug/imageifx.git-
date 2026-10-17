@@ -1,0 +1,87 @@
+{
+ "style": "bold_solid",
+ "elements": [
+  {
+   "id": "headline",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    100,
+    42,
+    1100,
+    338
+   ]
+  },
+  {
+   "id": "pill1",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    184,
+    368,
+    584,
+    436
+   ],
+   "mask": "bbox"
+  },
+  {
+   "id": "pill2",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    594,
+    368,
+    1018,
+    436
+   ],
+   "mask": "bbox"
+  },
+  {
+   "id": "footer1",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    92,
+    1078,
+    1125,
+    1140
+   ],
+   "group": "footer"
+  },
+  {
+   "id": "footer2",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    90,
+    1145,
+    1120,
+    1198
+   ],
+   "group": "footer"
+  },
+  {
+   "id": "woman",
+   "type": "subject",
+   "importance": "critical",
+   "bbox": [
+    115,
+    492,
+    920,
+    1078
+   ],
+   "text_overlap_src_px": 160
+  },
+  {
+   "id": "footer_band",
+   "type": "band",
+   "importance": "band",
+   "bbox": [
+    0,
+    1075,
+    1200,
+    1200
+   ]
+  }
+ ]
+}

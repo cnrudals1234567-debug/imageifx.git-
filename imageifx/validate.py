@@ -63,6 +63,10 @@ def check(layout, preset, out_size=None, file_kb=None):
             dx = max(B[0] - A[2], A[0] - B[2])
             dy = max(B[1] - A[3], A[1] - B[3])
             d = max(dx, dy)   # 음수면 겹침
+            if (a.get("overlap_ok") and c["type"] == "text") or (c.get("overlap_ok") and a["type"] == "text"):
+                continue   # bbox가 겹쳐도 되는 인물: 간격은 실루엣 기준(check_clearance)으로 검사
+            if (a.get("on_band") and c.get("group") == "footer") or (c.get("on_band") and a.get("group") == "footer"):
+                continue   # 인물은 띠 윗면에 서 있고 안내 문구는 띠 안에 있어 서로 다른 층이다
             if a["type"] == c["type"] == "text":
                 # 글자 블록끼리의 간격은 원본 디자인의 줄 간격을 축소한 값이라 실패로 단정하지 않고 정보로만 표시
                 if d < gap:
@@ -91,6 +95,10 @@ def inventory(elements, layout, preset):
         imp, eid = e["importance"], e["id"]
         if imp == "drop":
             rows.append({"id": eid, "kind": "drop", "status": "DROPPED", "ok": True, "warn": True, "detail": "의도적으로 제거됨"})
+        elif imp == "band":
+            ok = bool(layout.get("band"))
+            rows.append({"id": eid, "kind": "band", "status": "OK" if ok else "LOST", "ok": ok,
+                         "detail": "하단 띠를 결과 아래에 다시 붙임" if ok else "띠가 결과에 없음"})
         elif imp in ("critical", "movable"):
             L = by_id.get(eid)
             if not L:
@@ -277,23 +285,35 @@ def check_text_integrity(layout, preset, layers):
         rows.append({"check": f"글자 잘림 [{L['id']}]", "ok": not bad,
                      "detail": ("경계에서 잘림 의심 - " + ", ".join(bad)) if bad else "경계에 걸친 획 없음"})
 
-    # (2) 정렬: 줄들의 중심(또는 왼쪽 끝)이 가지런한지
+    # (2) 정렬: 줄들의 중심(또는 왼쪽 끝)이 가지런한지. 같은 높이에 나란한 요소(알약 등)는 한 줄로 묶는다.
     if len(texts) >= 3:
         boxes = {L["id"]: _box(L) for L in texts}
-        cs = {k: (b[0] + b[2]) / 2 for k, b in boxes.items()}
-        ls = {k: b[0] for k, b in boxes.items()}
-        gw = max(b[2] for b in boxes.values()) - min(b[0] for b in boxes.values())
-        def sd(d):
-            v = list(d.values()); m = sum(v) / len(v)
-            return (sum((x - m) ** 2 for x in v) / len(v)) ** 0.5
-        centered = sd(cs) < sd(ls)
-        ref = sorted((cs if centered else ls).values())[len(texts) // 2]
-        off = {k: (cs if centered else ls)[k] - ref for k in boxes}
-        worst = max(off.items(), key=lambda kv: abs(kv[1]))
-        ok = abs(worst[1]) <= 0.08 * gw
-        rows.append({"check": "글자 줄 정렬", "ok": True, "warn": bool(not ok),
-                     "detail": (f"{'중앙' if centered else '좌측'} 정렬 기준, 가장 어긋난 줄 [{worst[0]}] {worst[1]:+.0f}px "
-                                f"(블록 폭 {gw}px의 {abs(worst[1])/gw:.0%})")})
+        rows_ = []
+        for k, b in sorted(boxes.items(), key=lambda kv: kv[1][1]):
+            for r in rows_:
+                ov = min(b[3], r["y1"]) - max(b[1], r["y0"])
+                if ov > 0.5 * min(b[3] - b[1], r["y1"] - r["y0"]):
+                    r["ids"].append(k); r["y0"] = min(r["y0"], b[1]); r["y1"] = max(r["y1"], b[3])
+                    break
+            else:
+                rows_.append({"ids": [k], "y0": b[1], "y1": b[3]})
+        if len(rows_) >= 3:
+            spans = {tuple(r["ids"]): (min(boxes[i][0] for i in r["ids"]), max(boxes[i][2] for i in r["ids"])) for r in rows_}
+            cs = {k: (a + b) / 2 for k, (a, b) in spans.items()}
+            ls = {k: a for k, (a, _) in spans.items()}
+            gw = max(b for _, b in spans.values()) - min(a for a, _ in spans.values())
+
+            def sd(d):
+                v = list(d.values()); m = sum(v) / len(v)
+                return (sum((x - m) ** 2 for x in v) / len(v)) ** 0.5
+            centered = sd(cs) < sd(ls)
+            ref = sorted((cs if centered else ls).values())[len(rows_) // 2]
+            off = {k: (cs if centered else ls)[k] - ref for k in spans}
+            worst = max(off.items(), key=lambda kv: abs(kv[1]))
+            ok = abs(worst[1]) <= 0.08 * gw
+            rows.append({"check": "글자 줄 정렬", "ok": True, "warn": bool(not ok),
+                         "detail": (f"{'중앙' if centered else '좌측'} 정렬 기준, 가장 어긋난 줄 [{'+'.join(worst[0])}] {worst[1]:+.0f}px "
+                                    f"(블록 폭 {gw}px의 {abs(worst[1])/gw:.0%})")})
 
     # (3) 쏠림: 글자 질량 중심이 안전영역 중앙에서 얼마나 벗어났는지, 반대편 피사체가 균형을 잡는지
     if texts:
@@ -321,4 +341,33 @@ def check_text_integrity(layout, preset, layers):
         bad = abs(dev) > 0.2 and not balanced
         rows.append({"check": "글자 블록 쏠림", "ok": True, "warn": bool(bad),
                      "detail": f"글자 중심 x={tx:.0f} (안전영역 중앙 {zc:.0f}, 편차 {dev:+.0%})" + (" - 반대편 피사체가 균형을 잡음" if balanced and abs(dev) > 0.2 else "")})
+    return rows
+
+
+def check_clearance(layout, preset, layers):
+    """bbox가 겹치도록 허용한 인물(overlap_ok)과 글자의 간격을 실제 인물 실루엣 픽셀 기준으로 검사한다."""
+    import numpy as np
+    import cv2
+    from PIL import Image
+    W, H = preset["size"]
+    rows = []
+    gap = preset["min_gap"]
+    texts = [L for L in layout["layers"] if L["type"] == "text"]
+    for S_ in [L for L in layout["layers"] if L.get("overlap_ok") and L["id"] in layers]:
+        im = layers[S_["id"]]
+        w, h = max(1, round(im.width * S_["scale"])), max(1, round(im.height * S_["scale"]))
+        a = np.asarray(im.resize((w, h), Image.NEAREST))[..., 3] > 128
+        canvas = np.zeros((H, W), np.uint8)
+        x0, y0 = S_["x"], S_["y"]
+        cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(W, x0 + w), min(H, y0 + h)
+        if cx1 > cx0 and cy1 > cy0:
+            canvas[cy0:cy1, cx0:cx1] = a[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
+        grown = cv2.dilate(canvas, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * gap + 1, 2 * gap + 1)))
+        for T in texts:
+            if S_.get("on_band") and T.get("group") == "footer":
+                continue   # 띠 위에 선 인물과 띠 안 문구는 서로 다른 층
+            b = _box(T)
+            hit = int(grown[max(0, b[1]):min(H, b[3]), max(0, b[0]):min(W, b[2])].sum())
+            rows.append({"check": f"인물 실루엣↔글자 간격 [{S_['id']}↔{T['id']}]", "ok": hit == 0,
+                         "detail": "실루엣에서 %dpx 이상 떨어짐" % gap if hit == 0 else f"실루엣 {gap}px 안에 글자 영역이 들어옴({hit}px)"})
     return rows

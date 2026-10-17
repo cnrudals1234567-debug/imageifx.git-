@@ -44,8 +44,10 @@ def test_fit_bbox_ignores_preexisting_overlap():
 
 # ---------- layout._align_dx ----------
 
-def _txt(i, x0, x1):
-    return {"id": i, "bbox": [x0, 0, x1, 10]}
+def _txt(i, x0, x1, y=None):
+    """y를 주지 않으면 id 순서대로 서로 다른 줄(높이)에 둔다."""
+    y = (ord(i[0]) - ord("a")) * 40 if y is None else y
+    return {"id": i, "bbox": [x0, y, x1, y + 10]}
 
 
 def test_align_dx_recenters_only_outliers_in_centered_design():
@@ -105,3 +107,11 @@ def test_movable_dropped_when_no_room():
     els = [{"id": "star", "importance": "movable", "bbox": [100, 100, 160, 160]}]
     out = layout.place_movable(_base_layout([block]), els, _preset())
     assert all(l["id"] != "star" for l in out["layers"]), "자리가 없으면 허공에 두지 말고 누락으로 보고(인벤토리가 LOST 처리)"
+
+
+def test_align_dx_keeps_side_by_side_items_together():
+    """같은 높이에 나란히 있는 요소(알약 2개)를 따로 가운데로 당기면 서로 겹친다(실제로 났던 버그)."""
+    texts = [_txt("a", 100, 1100, 0), _txt("b", 200, 590, 100), _txt("c", 600, 1000, 100),
+             _txt("d", 300, 900, 200)]
+    dx = layout._align_dx(texts)
+    assert dx.get("b", 0) == dx.get("c", 0), "한 줄의 요소는 같은 양만큼 움직여야 함"

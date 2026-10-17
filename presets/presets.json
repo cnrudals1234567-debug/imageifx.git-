@@ -12,13 +12,7 @@
     },
     "min_gap": 24,
     "min_text_height": 22,
-    "max_kb": 1024,
-    "defaults": {
-      "bg_top": 120,
-      "text_scale": 0.78,
-      "person_h": 330,
-      "scrim": true
-    }
+    "max_kb": 1024
   },
   "gfa_1250x560": {
     "size": [
@@ -33,12 +27,6 @@
     "min_gap": 24,
     "min_text_height": 22,
     "max_kb": 250,
-    "defaults": {
-      "bg_top": 120,
-      "text_scale": 0.78,
-      "person_h": 330,
-      "scrim": true
-    },
     "formats": [
       "JPG",
       "PNG"
@@ -88,13 +76,7 @@
     },
     "min_gap": 16,
     "min_text_height": 22,
-    "max_kb": 5120,
-    "defaults": {
-      "bg_top": 100,
-      "text_scale": 0.85,
-      "person_h": 380,
-      "scrim": true
-    }
+    "max_kb": 5120
   },
   "google_1200x1200": {
     "size": [
@@ -137,7 +119,7 @@
     "min_gap": 16,
     "min_text_height": 22,
     "max_kb": 5120,
-    "defaults": {
+    "stack": {
       "text_top": 700,
       "text_up": 1.4,
       "person_up": 1.1
