@@ -11,3 +11,8 @@ dependencies = [
     "rembg>=2.0.85",
     "simple-lama-inpainting>=0.1.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
