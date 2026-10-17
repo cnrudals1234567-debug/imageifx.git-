@@ -76,5 +76,25 @@
       0,
       2
     ]
+  },
+  "background": {
+    "_doc": "flat 배경(스타일 background=flat): 요소 밖 배경 픽셀로 색장을 강건하게 맞춰 새로 그린다. 배경으로 남은 비율(inlier)이 flat_min_inlier보다 작거나 잔차 표준편차가 flat_max_resid보다 크면 사진·질감으로 보고 crop 방식으로 되돌린다.",
+    "flat_deg": 1,
+    "flat_max_resid": 6.0,
+    "fit_pad_px": 10,
+    "decor_threshold": 8,
+    "decor_close_px": 3,
+    "decor_feather_px": 1.5,
+    "flat_min_inlier": 0.5,
+    "decor_polarity_thr": 6
+  },
+  "decor": {
+    "_doc": "장식 앵커 배치. 원본에서 가장 가까운 모서리까지의 거리를 캔버스 높이 비율(H/원본높이)로 옮긴다. 글자와 겹치면 shrink_steps로 줄이고, 그래도 겹치면 optional만 제외한다.",
+    "shrink_steps": [
+      1.0,
+      0.8,
+      0.65
+    ],
+    "gap_px": 12
   }
 }

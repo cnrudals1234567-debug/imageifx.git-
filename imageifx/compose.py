@@ -40,12 +40,17 @@ def build_bg(clean: Image.Image, layout, cache_dir=None):
     cpath = os.path.join(cache_dir, f"bg_{key}.png") if cache_dir else None
     if cpath and os.path.exists(cpath):
         return Image.open(cpath).convert("RGB")
-    bw, bh = _scaled_size(clean.width, clean.height, b["scale"])
-    scaled = clean.resize((bw, bh), Image.LANCZOS)
-    canvas = Image.new("RGB", (W, H), (0, 0, 0))
-    canvas.paste(scaled, (b["x"], b["y"]))
-    covered = np.zeros((H, W), bool)
-    covered[max(0, b["y"]):min(H, b["y"] + bh), max(0, b["x"]):min(W, b["x"] + bw)] = True
+    if b.get("mode") == "flat":   # 단색·그라데이션 배경은 색 모델로 새로 그림(지운 자리의 얼룩이 화면에 나오지 않음)
+        from . import background as bgm
+        canvas = bgm.render_flat(b["model"], W, H)
+        covered = np.ones((H, W), bool)
+    else:
+        bw, bh = _scaled_size(clean.width, clean.height, b["scale"])
+        scaled = clean.resize((bw, bh), Image.LANCZOS)
+        canvas = Image.new("RGB", (W, H), (0, 0, 0))
+        canvas.paste(scaled, (b["x"], b["y"]))
+        covered = np.zeros((H, W), bool)
+        covered[max(0, b["y"]):min(H, b["y"] + bh), max(0, b["x"]):min(W, b["x"] + bw)] = True
     if not covered.all():
         rows = covered.all(axis=1)
         if covered.any(axis=0).all() and covered[rows].all() and (~rows).any() and rows.any() \
@@ -57,7 +62,11 @@ def build_bg(clean: Image.Image, layout, cache_dir=None):
     band = layout.get("band")
     if band:   # 하단 띠: 클린 배경의 띠 영역을 폭에 맞춰 캔버스 아래에 붙인다(글자는 이미 제거돼 있음)
         x0, y0, x1, y1 = band["src_bbox"]
-        strip = clean.crop((x0, y0, x1, y1)).resize((W, band["h"]), Image.LANCZOS)
+        if band.get("model"):   # 단색 띠는 색 모델로 새로 그림(안내문 잔상이 생기지 않음)
+            from . import background as bgm
+            strip = bgm.render_flat(band["model"], W, band["h"])
+        else:
+            strip = clean.crop((x0, y0, x1, y1)).resize((W, band["h"]), Image.LANCZOS)
         canvas.paste(strip, (0, H - band["h"]))
     if cpath:
         canvas.save(cpath)
@@ -81,7 +90,7 @@ def render(bg: Image.Image, layers_img: dict, layout) -> Image.Image:
     out = bg.convert("RGBA")
     if layout.get("scrim"):
         out = Image.alpha_composite(out, _scrim(out.size, layout["scrim"]))
-    for L in layout["layers"]:
+    for L in sorted(layout["layers"], key=lambda L: L.get("z", 0)):   # z: 장식(-) < 기본(0) < 앞(+), 같은 z는 원래 순서
         src = layers_img[L["id"]]
         w, h = _scaled_size(src.width, src.height, L["scale"])
         im = src.resize((w, h), Image.LANCZOS) if (w, h) != src.size else src

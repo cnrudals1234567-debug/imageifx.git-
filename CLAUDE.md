@@ -37,3 +37,12 @@ analyzer(요소 분석) -> 실행 -> 필요 시 element-fixer -> naturalness-rev
 ## 이번 합의 (사용자 확정)
 - 올빼미 얼굴이 좌측 240px 경계에 걸리는 것, 한국어학과에서 스크림이 노트 손글씨를 덮는 것은 "이대로" 수락됨.
 - 우선순위: 디자인 스타일 일관성과 GFA 규정 준수 둘 다 매우 중요.
+
+## 스타일과 요소 속성 (분석 json 작성 규칙)
+- 분석 json 최상단 `"style"`: `dark_board`(어두운 칠판) / `photo_collage`(밝은 사진·콜라주) / `bold_solid`(단색 배경 + 굵은 큰 글씨). 배치 옵션은 스타일이 정하고, CLI 옵션은 덮어쓰기 전용(기록·경고됨).
+- 요소 `importance`: `critical`(글자·인물, 안전영역 규칙 대상) / `movable`(재배치할 장식, 배경에서 제거) / `decor`(장식을 부품으로 복사, flat 스타일 전용) / `band`(전체 폭 띠) / `drop`(지우기만).
+- `decor` 속성: `anchor`(corner_tl/tr/bl/br, 바닥 기준 비율 유지) · `priority`(keep/optional) · `overlap`(none/subject/any: 글자와 겹쳐도 되는지) · `z`(back/behind_subject/front) · `polarity`(light/dark/any: 배경보다 밝은/어두운 것만 복사) · `fade`(경계를 부드럽게, 원본 px).
+- 글자 `group`: `footer`는 띠 안에 따로 배치. 글자 `mask`: `glyph`(글자 모양대로 지움, 단색 배경용) / `bbox`.
+- 인물 `text_overlap_src_px`: 인물 bbox의 빈 공간까지 글자 영역을 넓힘(간격은 실루엣 기준으로 검사).
+- `decor`는 `background: flat` 스타일에서만 동작한다. 사진·질감 배경은 crop+LaMa이며, flat 적합도(잔차·배경 비율)가 낮으면 자동으로 crop으로 되돌아간다.
+- 자리가 없는 `optional` 장식은 인벤토리에 `DROPPED(사유)`로 보고된다. 조용한 손실은 없어야 한다.

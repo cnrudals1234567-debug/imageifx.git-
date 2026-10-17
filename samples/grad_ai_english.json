@@ -82,6 +82,108 @@
     1200,
     1200
    ]
+  },
+  {
+   "id": "arc_left",
+   "type": "decor",
+   "importance": "decor",
+   "bbox": [
+    0,
+    528,
+    445,
+    1075
+   ],
+   "anchor": "corner_bl",
+   "priority": "optional",
+   "overlap": "subject",
+   "z": "behind_subject",
+   "polarity": "light",
+   "fade": {
+    "right": 90
+   }
+  },
+  {
+   "id": "arc_right",
+   "type": "decor",
+   "importance": "decor",
+   "bbox": [
+    845,
+    528,
+    1200,
+    1075
+   ],
+   "anchor": "corner_br",
+   "priority": "optional",
+   "overlap": "subject",
+   "z": "behind_subject",
+   "polarity": "light",
+   "fade": {
+    "left": 60
+   }
+  },
+  {
+   "id": "wm_A",
+   "type": "decor",
+   "importance": "decor",
+   "bbox": [
+    8,
+    18,
+    205,
+    285
+   ],
+   "anchor": "corner_tl",
+   "priority": "optional",
+   "overlap": "any",
+   "z": "back",
+   "polarity": "light"
+  },
+  {
+   "id": "wm_E",
+   "type": "decor",
+   "importance": "decor",
+   "bbox": [
+    1035,
+    22,
+    1182,
+    205
+   ],
+   "anchor": "corner_tr",
+   "priority": "optional",
+   "overlap": "any",
+   "z": "back",
+   "polarity": "light"
+  },
+  {
+   "id": "wm_I",
+   "type": "decor",
+   "importance": "decor",
+   "bbox": [
+    138,
+    388,
+    225,
+    548
+   ],
+   "anchor": "corner_tl",
+   "priority": "optional",
+   "overlap": "any",
+   "z": "back",
+   "polarity": "light"
+  },
+  {
+   "id": "wm_G",
+   "type": "decor",
+   "importance": "decor",
+   "bbox": [
+    925,
+    430,
+    1082,
+    570
+   ],
+   "anchor": "corner_tr",
+   "priority": "optional",
+   "overlap": "any",
+   "z": "back",
+   "polarity": "light"
   }
  ]
 }

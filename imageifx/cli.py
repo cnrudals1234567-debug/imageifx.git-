@@ -152,11 +152,17 @@ def main():
         name = f"{base}_{a.preset}"
         workdir = os.path.join(ROOT, "output", name)
         os.makedirs(workdir, exist_ok=True)
-        clean, layers = decompose.run(src, els, text_mask=style_dict.get("text_mask", "bbox"))
+        meta = {}
+        clean, layers = decompose.run(src, els, text_mask=style_dict.get("text_mask", "bbox"),
+                                      bg_mode=style_dict.get("background", "crop"), meta=meta)
+        for wmsg in meta.get("warnings", []):
+            print("[경고]", wmsg)
+        with open(os.path.join(workdir, "decompose_meta.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
         clean.save(os.path.join(workdir, "clean_bg.png"))
         for k, im in layers.items():
             im.save(os.path.join(workdir, f"layer_{k}.png"))
-        layout = lay.build(els, src.size, preset, style_dict, _overrides(a), style_name)
+        layout = lay.build(els, src.size, preset, style_dict, _overrides(a), style_name, meta=meta)
         with open(os.path.join(workdir, "elements.json"), "w", encoding="utf-8") as f:
             json.dump({"elements": els, "src_size": list(src.size), "source": os.path.abspath(a.image),
                        "style": style_name}, f, ensure_ascii=False)
@@ -177,12 +183,17 @@ def main():
         workdir = os.path.join(ROOT, "output", name)
         os.makedirs(workdir, exist_ok=True)
         for fn in os.listdir(base):
-            if fn == "clean_bg.png" or fn.startswith("layer_"):
+            if fn == "clean_bg.png" or fn.startswith("layer_") or fn == "decompose_meta.json":
                 shutil.copy(os.path.join(base, fn), workdir)
         meta["style"] = style_name
         with open(os.path.join(workdir, "elements.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False)
-        layout = lay.build(meta["elements"], tuple(meta["src_size"]), preset, style_dict, _overrides(a), style_name)
+        dmeta = {}
+        mp = os.path.join(base, "decompose_meta.json")
+        if os.path.exists(mp):
+            with open(mp, encoding="utf-8") as f:
+                dmeta = json.load(f)
+        layout = lay.build(meta["elements"], tuple(meta["src_size"]), preset, style_dict, _overrides(a), style_name, meta=dmeta)
         layout.update({"preset": pname, "canvas": preset["size"], "name": name})
         with open(os.path.join(workdir, "layout.json"), "w", encoding="utf-8") as f:
             json.dump(layout, f, indent=1)

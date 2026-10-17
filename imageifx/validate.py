@@ -95,6 +95,18 @@ def inventory(elements, layout, preset):
         imp, eid = e["importance"], e["id"]
         if imp == "drop":
             rows.append({"id": eid, "kind": "drop", "status": "DROPPED", "ok": True, "warn": True, "detail": "의도적으로 제거됨"})
+        elif imp == "decor":
+            L = by_id.get(eid)
+            drop = next((d for d in layout.get("dropped", []) if d["id"] == eid), None)
+            if L:
+                st = "OK/" + L.get("placement", "anchored")
+                rows.append({"id": eid, "kind": "decor", "status": st, "ok": True, "warn": "shrunk" in st,
+                             "detail": f"앵커 {L.get('anchor')} (캔버스 밖 걸침 허용)"})
+            elif drop:
+                rows.append({"id": eid, "kind": "decor", "status": "DROPPED(optional)", "ok": True, "warn": True, "detail": drop["reason"]})
+            else:
+                rows.append({"id": eid, "kind": "decor", "status": "LOST", "ok": False,
+                             "detail": "배치되지 않음(flat 배경이 아니면 decor 복사가 동작하지 않음)"})
         elif imp == "band":
             ok = bool(layout.get("band"))
             rows.append({"id": eid, "kind": "band", "status": "OK" if ok else "LOST", "ok": ok,

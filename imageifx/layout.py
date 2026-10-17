@@ -79,6 +79,7 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     floor_y = H - band_h   # 글자·피사체가 서는 바닥(띠가 있으면 띠 윗면)
     if band_el:
         layout["band"] = {"src_bbox": band_el["bbox"], "h": band_h}
+    layout["floor"] = {"y": floor_y, "src_y": band_el["bbox"][1] if band_el else sh}   # 장식 앵커의 바닥 기준
 
     def place(group, x_left, x_right, align):
         """group을 [x_left,x_right] 안에 세로 중앙 정렬로 배치. 균등 축소만 사용."""
@@ -209,7 +210,7 @@ def auto_free(elements, src_size, preset, **_):
     return layout
 
 
-def build(elements, src_size, preset, style_dict=None, overrides=None, style_name=None):
+def build(elements, src_size, preset, style_dict=None, overrides=None, style_name=None, meta=None):
     """프리셋의 mode/비율에 맞는 배치 함수를 고른다.
     배치 옵션은 스타일 프로필(소재 유형별)에서 오고, 사람이 CLI로 준 덮어쓰기는 layout['overrides']에 기록한다."""
     W, H = preset["size"]
@@ -223,6 +224,15 @@ def build(elements, src_size, preset, style_dict=None, overrides=None, style_nam
                        text_scale=opts["text_scale"], person_h=opts["person_h"], scrim=opts["scrim"],
                        text_width_ratio=opts["text_width_ratio"], text_v_ratio=opts["text_v_ratio"])
     lay = place_movable(lay, elements, preset)
+    meta = meta or {}
+    if meta.get("bg_model"):   # flat 배경: crop 대신 색 모델로 다시 그림
+        lay["bg"]["mode"] = "flat"
+        lay["bg"]["model"] = meta["bg_model"]
+        if lay.get("band"):
+            bm = (meta.get("band_models") or {}).get(next(e["id"] for e in elements if e["importance"] == "band"))
+            if bm:
+                lay["band"]["model"] = bm
+        lay = place_decor(lay, elements, preset, src_size)
     if style_name:
         lay["style"] = style_name
     given = {k: v for k, v in (overrides or {}).items() if v is not None}
@@ -233,20 +243,35 @@ def build(elements, src_size, preset, style_dict=None, overrides=None, style_nam
 
 def auto_stack(elements, src_size, preset, text_top=700, text_up=1.4, person_up=1.1, **_):
     """초세로(9:16)용 수직 스택. 배경은 폭 기준으로 전체를 위에 두고(잘림 없음) 아래는 LaMa로 이어 채움.
-    글자 블록은 중앙, 피사체는 좌하단 bleed. 어떤 요소도 crop하지 않는다."""
+    글자 블록은 중앙, 피사체는 좌하단 bleed. 어떤 요소도 crop하지 않는다.
+    띠(importance=band)가 있으면: 피사체는 띠 윗면에 서고, group=footer 문구는 띠 안에 가운데 정렬한다."""
     W, H = preset["size"]
     m = preset["safe_margin"]["x"]
     gap = preset["min_gap"]
     sw, sh = src_size
     crit = [e for e in elements if e["importance"] == "critical"]
-    texts = [e for e in crit if e["type"] == "text"]
+    band_el = next((e for e in elements if e["importance"] == "band"), None)
+    all_texts = [e for e in crit if e["type"] == "text"]
+    footer = [e for e in all_texts if e.get("group") == "footer"] if band_el else []
+    texts = [e for e in all_texts if e not in footer]
     subjs = [e for e in crit if e["type"] != "text"]
     s = W / sw
     layout = {"bg": {"scale": s, "x": 0, "y": 0}, "layers": []}
+    band_h = round((band_el["bbox"][3] - band_el["bbox"][1]) * s) if band_el else 0
+    floor_y = H - band_h
+    if band_el:
+        layout["band"] = {"src_bbox": band_el["bbox"], "h": band_h}
+        layout["floor"] = {"y": floor_y, "src_y": band_el["bbox"][1]}
 
     ut = _union([e["bbox"] for e in texts])
     ft = min(text_up, (W - 2 * m) / (ut[2] - ut[0]))
-    t_bottom = text_top + (ut[3] - ut[1]) * ft
+    text_h = (ut[3] - ut[1]) * ft
+    fp_band = None
+    if band_el and subjs:   # 띠가 있으면 인물 크기를 먼저 정하고, 글자는 그 위에 쌓는다
+        up0 = _union([e["bbox"] for e in subjs])
+        fp_band = min(person_up, (W - 2 * m) / (up0[2] - up0[0]), 0.4 * H / (up0[3] - up0[1]))
+        text_top = min(text_top, floor_y - (up0[3] - up0[1]) * fp_band - gap - text_h)
+    t_bottom = text_top + text_h
     for e in texts:
         b = e["bbox"]
         layout["layers"].append({
@@ -257,21 +282,37 @@ def auto_stack(elements, src_size, preset, text_top=700, text_up=1.4, person_up=
     if subjs:
         up = _union([e["bbox"] for e in subjs])
         uw, uh = up[2] - up[0], up[3] - up[1]
-        bleed = any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") for e in subjs)
-        fp = min(person_up, (W - 2 * m) / uw, (H - t_bottom - gap) / uh)   # 글자와 겹치지 않게
-        top = (H - uh * fp) if bleed else (H - m - uh * fp)
+        on_band = bool(band_el) and any(e["bbox"][3] >= band_el["bbox"][1] - 3 for e in subjs)
+        bleed = (not on_band) and any(e["bbox"][3] >= sh - S("layout.bleed_touch_px") for e in subjs)
+        base = floor_y if on_band else H
+        fp = min(person_up, (W - 2 * m) / uw, (base - t_bottom - gap) / uh)   # 글자와 겹치지 않게
+        top = (base - uh * fp) if (bleed or on_band) else (H - m - uh * fp)
         start = len(layout["layers"])
         for e in subjs:
             b = e["bbox"]
             layout["layers"].append({
                 "id": e["id"], "type": e["type"], "importance": "critical", "src_bbox": b, "scale": round(fp, 4),
                 "x": int(round(m + (b[0] - up[0]) * fp)), "y": int(round(top + (b[1] - up[1]) * fp)),
-                **({"bleed": ["bottom"]} if bleed else {})})
+                **({"bleed": ["bottom"]} if bleed else {}), **({"on_band": True} if on_band else {})})
         if bleed:
             new = layout["layers"][start:]
             dy = H - max(round(L["y"] + (L["src_bbox"][3] - L["src_bbox"][1]) * L["scale"]) for L in new)
             for L in new:
                 L["y"] += dy
+
+    if footer:   # 안내 문구: 띠 안에 가운데 정렬
+        uf = _union([e["bbox"] for e in footer])
+        fw, fh = uf[2] - uf[0], uf[3] - uf[1]
+        bp = S("layout.band_text_pad_px")
+        region = min(band_h, H - m - floor_y)   # 띠 안에서도 아래 여백을 지킨다
+        fsc = min((W - 2 * m) / fw, (region - 2 * bp) / fh, 1.0)
+        fx = (W - fw * fsc) / 2
+        fy = floor_y + (region - fh * fsc) / 2
+        for e in footer:
+            b = e["bbox"]
+            layout["layers"].append({"id": e["id"], "type": "text", "importance": "critical", "src_bbox": b,
+                                     "scale": round(fsc, 4), "x": int(round(fx + (b[0] - uf[0]) * fsc)),
+                                     "y": int(round(fy + (b[1] - uf[1]) * fsc)), "group": "footer"})
     return layout
 
 
@@ -329,4 +370,58 @@ def place_movable(layout, elements, preset, decor_scale=None, gap=None, margin=N
         taken.append([pos[0], pos[1], pos[0] + wi, pos[1] + hi])
         layout["layers"].append({"id": e["id"], "type": "decor", "importance": "movable", "src_bbox": e["bbox"],
                                  "scale": round(sc, 4), "x": pos[0], "y": pos[1], "placement": mode})
+    return layout
+
+
+def place_decor(layout, elements, preset, src_size):
+    """장식(importance=decor)을 앵커 기준으로 배치. 원본에서 가장 가까운 모서리까지의 거리를 캔버스 높이 비율로 옮긴다.
+    모서리 앵커는 캔버스 밖으로 걸쳐도 된다(장식은 안전영역 밖 허용). 글자와 겹치면 줄이고, 그래도 겹치면 optional만 뺀다.
+    결과는 레이어의 placement/scale 또는 layout['dropped'](사유 포함)에 남겨 인벤토리가 보고한다."""
+    W, H = preset["size"]
+    sw, sh = src_size
+    floor = layout.get("floor", {"y": H, "src_y": sh})
+    # 원본의 세로 높이(바닥=띠 윗면까지)를 캔버스 바닥 위에 그대로 담는 비율. 장식끼리 원본의 위아래 배치가 유지된다.
+    k = floor["y"] / floor["src_y"]
+    gap = S("decor.gap_px")
+    texts = [L for L in layout["layers"] if L["type"] == "text"]
+    subjects = [L for L in layout["layers"] if L["type"] not in ("text", "decor")]
+
+    def box(L):
+        x0, y0, x1, y1 = L["src_bbox"]
+        return [L["x"], L["y"], L["x"] + round((x1 - x0) * L["scale"]), L["y"] + round((y1 - y0) * L["scale"])]
+
+    blockers_text = [box(L) for L in texts if L.get("group") != "footer"]   # 띠 안 문구는 띠 위 장식과 다른 층
+    blockers_subj = [box(L) for L in subjects]
+    layout.setdefault("dropped", [])
+    z_of = {"back": -2, "behind_subject": -1, "front": 1}
+    for e in [e for e in elements if e["importance"] == "decor"]:
+        x0, y0, x1, y1 = e["bbox"]
+        anchor = e.get("anchor", "corner_tl")
+        overlap = e.get("overlap", "none")          # any | subject | none
+        placed = None
+        for f in S("decor.shrink_steps"):
+            sc = k * f
+            w, h = round((x1 - x0) * sc), round((y1 - y0) * sc)
+            # 앵커 모서리를 기준으로 원본의 모서리 거리를 비율대로 유지(축소해도 모서리 쪽은 고정)
+            left = "l" in anchor.split("_")[-1]
+            top = "t" in anchor.split("_")[-1]
+            nx = round(x0 * k) if left else round(W - (sw - x1) * k) - w
+            ny = round(y0 * k) if top else round(floor["y"] - (floor["src_y"] - y1) * k) - h
+            b = [nx, ny, nx + w, ny + h]
+            blockers = [] if overlap == "any" else (blockers_text if overlap == "subject" else blockers_text + blockers_subj)
+            hit = any(not (b[2] + gap <= o[0] or o[2] + gap <= b[0] or b[3] + gap <= o[1] or o[3] + gap <= b[1]) for o in blockers)
+            if not hit:
+                placed = (nx, ny, sc, f)
+                break
+        if placed is None:
+            if e.get("priority", "optional") == "optional":
+                layout["dropped"].append({"id": e["id"], "reason": "글자/인물과 겹쳐 자리 없음(최소 배율까지 축소해도)"})
+                continue
+            nx, ny, sc, f = nx, ny, sc, f   # keep: 마지막 축소 상태로라도 둔다(검사에서 겹침이 드러남)
+            placed = (nx, ny, sc, f)
+        nx, ny, sc, f = placed
+        layout["layers"].append({"id": e["id"], "type": "decor", "importance": "decor", "src_bbox": e["bbox"],
+                                 "scale": round(sc, 4), "x": nx, "y": ny, "anchor": anchor,
+                                 "placement": "anchored" if f == 1.0 else f"anchored_shrunk_{f}",
+                                 "z": z_of.get(e.get("z", "back"), -2), "bleed_ok": True})
     return layout

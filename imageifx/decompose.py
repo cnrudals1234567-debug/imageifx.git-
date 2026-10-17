@@ -102,9 +102,11 @@ def _glyph_mask(arr, bbox, pad):
     return m
 
 
-def run(src: Image.Image, elements: list, pad: int = None, text_mask: str = "bbox"):
+def run(src: Image.Image, elements: list, pad: int = None, text_mask: str = "bbox", bg_mode: str = "crop", meta: dict = None):
     """elements: [{id,type,importance,bbox:[x0,y0,x1,y1]}] (원본 좌표).
-    반환: clean_bg(RGB), layers{id: RGBA Image(bbox 크기)}"""
+    반환: clean_bg(RGB), layers{id: RGBA Image(bbox 크기)}.
+    bg_mode="flat"이면 meta에 배경/띠 색 모델(bg_model, band_models)을 채우고, importance="decor" 장식을 클린 이미지에서 복사해 레이어로 만든다."""
+    meta = {} if meta is None else meta
     pad = S("decompose.mask_pad_px") if pad is None else pad
     sat = S("decompose.subject_alpha_threshold")
     ta = S("decompose.text_alpha")
@@ -114,7 +116,7 @@ def run(src: Image.Image, elements: list, pad: int = None, text_mask: str = "bbo
     # 글자 bbox 자동 보정: elements의 bbox를 제자리에서 갱신(이후 레이아웃/elements.json에 반영됨)
     for e in elements:
         if e["type"] == "text" and e["importance"] == "critical":
-            others = [o["bbox"] for o in elements if o is not e and o.get("bbox") and o["importance"] != "band"]
+            others = [o["bbox"] for o in elements if o is not e and o.get("bbox") and o["importance"] not in ("band", "decor")]
             nb = _fit_bbox(arr, e["bbox"], others)
             if nb != e["bbox"]:
                 print(f"[bbox 보정] {e['id']}: {e['bbox']} -> {nb}")
@@ -178,4 +180,63 @@ def run(src: Image.Image, elements: list, pad: int = None, text_mask: str = "bbo
             alpha = cv2.dilate(alpha, np.ones((ta["dilate_px"], ta["dilate_px"]), np.uint8))  # 외곽선/그림자 보존
             alpha[subj_full[y0:y1, x0:x1] > 0] = 0
         layers[e["id"]] = Image.fromarray(np.dstack([rgb, alpha]), "RGBA")
+
+    if bg_mode == "flat":
+        _flat_models_and_decor(arr, np.asarray(clean), elements, pad, layers, meta)
     return clean, layers
+
+
+def _flat_models_and_decor(arr, carr, elements, pad, layers, meta):
+    """flat 배경: 요소 밖 배경으로 색장 모델, 띠는 안내문을 뺀 띠 픽셀로 모델, 장식은 클린 이미지에서 복사."""
+    from . import background as bgm
+    h, w = arr.shape[:2]
+    fp = S("background.fit_pad_px")
+    occ = _bbox_mask(arr.shape, [e["bbox"] for e in elements if e.get("bbox")], fp)
+    model = bgm.fit_flat(arr, occ == 0, deg=S("background.flat_deg"))
+    meta["warnings"] = meta.get("warnings", [])
+    if model is None or model["resid"] > S("background.flat_max_resid") or model["inlier"] < S("background.flat_min_inlier"):
+        meta["warnings"].append(f"flat 배경 부적합(모델 {model}) -> crop 방식 사용")
+        meta["bg_model"] = None
+        return
+    meta["bg_model"] = model
+    # 띠: 띠 영역에서 그 안의 글자 bbox를 뺀 픽셀로 맞춘다
+    meta["band_models"] = {}
+    texts = [e["bbox"] for e in elements if e["type"] == "text"]
+    for e in elements:
+        if e["importance"] == "band" and e.get("fill", "flat") == "flat":
+            x0, y0, x1, y1 = e["bbox"]
+            use = np.zeros((h, w), bool)
+            use[y0:y1, x0:x1] = True
+            use &= _bbox_mask(arr.shape, texts, fp) == 0
+            meta["band_models"][e["id"]] = bgm.fit_flat(arr, use, deg=S("background.flat_deg"), region=e["bbox"])
+    # 장식: 클린 이미지(글자·인물 제거됨)에서 배경 색장과 다른 부분만 부드러운 마스크로 복사
+    flat_src = bgm.flat_at_source(model, w, h)
+    for e in elements:
+        if e["importance"] != "decor":
+            continue
+        x0, y0, x1, y1 = e["bbox"]
+        dist = np.abs(carr[y0:y1, x0:x1].astype(np.int32) - flat_src[y0:y1, x0:x1]).max(axis=2)
+        m = (dist > S("background.decor_threshold")).astype(np.uint8)
+        k = S("background.decor_close_px")
+        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * k + 1, 2 * k + 1)))
+        # polarity: 배경보다 밝은 것만(light)/어두운 것만(dark)/모두(any). 지운 자리의 어두운 채움 자국이 장식에 딸려오는 것을 거른다.
+        pol = e.get("polarity", "any")
+        if pol != "any":
+            signed = carr[y0:y1, x0:x1].astype(np.int32).mean(axis=2) - flat_src[y0:y1, x0:x1].mean(axis=2)
+            thr = S("background.decor_polarity_thr")
+            m = m & ((signed > thr) if pol == "light" else (signed < -thr)).astype(np.uint8)
+        a = cv2.GaussianBlur(m.astype(np.float32) * 255, (0, 0), S("background.decor_feather_px"))
+        # fade: bbox 가장자리(원본 px)에서 안쪽으로 알파를 서서히 키워, 영역 경계가 직선으로 드러나는 것을 막는다.
+        hh, ww = a.shape
+        for side, px in (e.get("fade") or {}).items():
+            n = max(1, int(px))
+            ramp = np.clip(np.arange(n, dtype=np.float32) / n, 0, 1)
+            if side == "right":
+                a[:, ww - n:] *= ramp[::-1][None, :]
+            elif side == "left":
+                a[:, :n] *= ramp[None, :]
+            elif side == "top":
+                a[:n, :] *= ramp[:, None]
+            elif side == "bottom":
+                a[hh - n:, :] *= ramp[::-1][:, None]
+        layers[e["id"]] = Image.fromarray(np.dstack([carr[y0:y1, x0:x1], np.clip(a, 0, 255).astype(np.uint8)]), "RGBA")
