@@ -187,6 +187,33 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     return layout
 
 
+def auto_whole(elements, src_size, preset, text_v_ratio=None, fit_ratio=1.0, mirror_gap_px=None, mirror_src_x0=0, **_):
+    """원본 통째 유지: 글자를 떼지 않고 원본 전체를 균등 축소해 글자 묶음이 안전영역에 들어가게 하고, 모자라는 가장자리는 배경 확장(LaMa)으로 채운다.
+    글자 레이어는 검사용(ghost)이며 합성되지 않는다."""
+    W, H = preset["size"]
+    sz = preset.get("safe_zone")
+    sx0, sy0, sx1, sy1 = (sz["left"], sz["top"], W - sz["right"], H - sz["bottom"]) if sz else (
+        preset["safe_margin"]["x"], preset["safe_margin"]["y"], W - preset["safe_margin"]["x"], H - preset["safe_margin"]["y"])
+    sw, sh = src_size
+    texts = [e for e in elements if e["importance"] == "critical" and e["type"] == "text"]
+    u = _union([e["bbox"] for e in texts])
+    uw, uh = u[2] - u[0], u[3] - u[1]
+    s = min((sx1 - sx0) / uw, (sy1 - sy0) / uh) * fit_ratio     # fit_ratio<1: 안전영역을 다 채우지 않고 더 작게(원본이 더 많이 보임)
+    bx = int(round(sx0 - u[0] * s))                                    # 글자 묶음의 왼쪽을 안전영역 왼쪽에 붙여 좌측 확장을 최소로
+    vr = 0.5 if text_v_ratio is None else text_v_ratio
+    by = int(round(sy0 + ((sy1 - sy0) - uh * s) * vr - u[1] * s))
+    layers = []
+    for e in texts:
+        b = e["bbox"]
+        layers.append({"id": e["id"], "type": "text", "importance": "critical", "src_bbox": b, "scale": round(s, 4),
+                       "x": int(round(bx + b[0] * s)), "y": int(round(by + b[1] * s)), "ghost": True})
+    bg = {"scale": s, "x": bx, "y": by, "outpaint": "progressive"}
+    if mirror_gap_px is not None:   # 마지막 글자 아래 이만큼부터는 풍경이므로 오른쪽 확장을 원본 반사로 채운다
+        bg["mirror_below_src_y"] = u[3] + mirror_gap_px
+        bg["mirror_src_x0"] = mirror_src_x0
+    return {"bg": bg, "layers": layers, "floor": {"y": H, "src_y": sh}}
+
+
 def _margins(preset):
     """(좌, 상, 우, 하) 여백 px. safe_zone이 있으면 방향별 값, 없으면 safe_margin(x는 좌우, y는 상하)."""
     z = preset.get("safe_zone")
@@ -287,6 +314,9 @@ def build(elements, src_size, preset, style_dict=None, overrides=None, style_nam
     kind = preset.get("layout") or preset.get("mode")   # layout: 배치 방식, mode: 규정 계열. 정사각 GFA 피드는 규정은 gfa, 배치는 free
     if kind == "free" and H / W >= 1.6:
         lay = auto_stack(elements, src_size, preset, **preset.get("stack", {}))
+    elif (style_dict or {}).get("layout") == "whole" and kind != "free":
+        lay = auto_whole(elements, src_size, preset, text_v_ratio=opts["text_v_ratio"], fit_ratio=style_dict.get("fit_ratio", 1.0),
+                         mirror_gap_px=style_dict.get("mirror_gap_px"), mirror_src_x0=style_dict.get("mirror_src_x0", 0))
     elif kind == "free" and W / H < 1.3:
         lay = auto_free(elements, src_size, preset)
     else:
@@ -303,6 +333,11 @@ def build(elements, src_size, preset, style_dict=None, overrides=None, style_nam
             if bm:
                 lay["band"]["model"] = bm
         lay = place_decor(lay, elements, preset, src_size)
+        if lay.get("band") and (style_dict or {}).get("band_tint_ratio"):
+            from . import background as bgm
+            W0, H0 = preset["size"]
+            px = bgm.render_flat(meta["bg_model"], W0, H0).getpixel((W0 // 2, max(0, lay["floor"]["y"] - 1)))
+            lay["band"]["tint"] = {"color": list(px[:3]), "ratio": style_dict["band_tint_ratio"]}
     if style_name:
         lay["style"] = style_name
     given = {k: v for k, v in (overrides or {}).items() if v is not None}

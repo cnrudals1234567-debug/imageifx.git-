@@ -58,7 +58,14 @@ def build_bg(clean: Image.Image, layout, cache_dir=None):
                 and not (~rows[rows.argmax():rows.size - rows[::-1].argmax()]).any():
             canvas = _extend_rows(canvas, rows)   # 위/아래 띠만 비었을 때: 가장자리 색을 이어붙임
         else:
-            canvas = fill.inpaint(canvas, ~covered)   # 좌우 등 복잡한 확장은 LaMa
+            if b.get("outpaint") == "progressive":
+                pre = None
+                if b.get("mirror_below_src_y"):   # 글자 없는 풍경 구간은 원본 반사로(실제 픽셀, 흐려지지 않음). 나머지(하늘)는 AI
+                    canvas, pre = fill.mirror_right(canvas, covered, b["y"] + int(round(b["mirror_below_src_y"] * b["scale"])),
+                                                       b["x"] + int(round(b.get("mirror_src_x0", 0) * b["scale"])))
+                canvas = fill.outpaint_progressive(canvas, covered, S("compose.outpaint.step_px"), S("compose.outpaint.window_px"), pre)   # 좌우 확장을 경계에서 단계적으로
+            else:
+                canvas = fill.inpaint(canvas, ~covered)   # 좌우 등 복잡한 확장은 LaMa
     band = layout.get("band")
     if band:   # 하단 띠: 클린 배경의 띠 영역을 폭에 맞춰 캔버스 아래에 붙인다(글자는 이미 제거돼 있음)
         x0, y0, x1, y1 = band["src_bbox"]
@@ -67,6 +74,10 @@ def build_bg(clean: Image.Image, layout, cache_dir=None):
             strip = bgm.render_flat(band["model"], W, band["h"])
         else:
             strip = clean.crop((x0, y0, x1, y1)).resize((W, band["h"]), Image.LANCZOS)
+        tint = band.get("tint")   # 흰색에 가까운 띠가 가장자리 흰색 채움 규칙에 걸릴 때: 배경색을 조금 섞어 연한 색으로(옵션, 기본 없음)
+        if tint:
+            r = tint["ratio"]
+            strip = Image.blend(strip.convert("RGB"), Image.new("RGB", strip.size, tuple(tint["color"])), r)
         canvas.paste(strip, (0, H - band["h"]))
     if cpath:
         canvas.save(cpath)
@@ -91,6 +102,8 @@ def render(bg: Image.Image, layers_img: dict, layout) -> Image.Image:
     if layout.get("scrim"):
         out = Image.alpha_composite(out, _scrim(out.size, layout["scrim"]))
     for L in sorted(layout["layers"], key=lambda L: L.get("z", 0)):   # z: 장식(-) < 기본(0) < 앞(+), 같은 z는 원래 순서
+        if L.get("ghost"):
+            continue   # 원본 통째 유지: 이미 배경에 있는 글자(검사용 레이어)
         src = layers_img[L["id"]]
         w, h = _scaled_size(src.width, src.height, L["scale"])
         im = src.resize((w, h), Image.LANCZOS) if (w, h) != src.size else src

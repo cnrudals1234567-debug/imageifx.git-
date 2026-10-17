@@ -5,7 +5,8 @@
   "text_scale": 0.78,
   "person_h_ratio": 0.68,
   "bg_top_ratio": 0.0,
-  "text_width_ratio": 0.5,
+  "text_width_ratio": 0.58,
+  "band_tint_ratio": 0.12,
   "text_mask": "glyph",
   "text_v_ratio": 0.35,
   "background": "flat"

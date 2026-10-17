@@ -152,3 +152,22 @@ def test_auto_free_keeps_text_inside_bottom_margin_when_subject_bleeds():
     body = next(L for L in lay["layers"] if L["id"] == "body")
     assert "bleed" in person and person["y"] + round(550 * person["scale"]) == 1080
     assert body["y"] + round(250 * body["scale"]) <= 1080 - 48    # 글자는 하단 여백을 넘지 않는다
+
+
+# ---------- 원본 통째 유지(layout:whole) ----------
+
+def test_whole_keeps_pixels_and_fits_text_in_safe_zone():
+    import json, os
+    from PIL import Image
+    preset = json.load(open(os.path.join(os.path.dirname(__file__), "..", "presets", "presets.json"), encoding="utf-8"))["gfa_1250x560"]
+    els = [{"id": "t", "type": "text", "importance": "critical", "bbox": [200, 50, 1000, 700]}]
+    src = Image.new("RGB", (1254, 1254), (10, 60, 200))
+    clean, layers = decompose.run_whole(src, els)
+    assert list(clean.getdata()) == list(src.getdata())              # 글자를 지우거나 바꾸지 않는다
+    lay = layout.auto_whole(els, src.size, preset)
+    L = lay["layers"][0]
+    assert L["ghost"] and abs(lay["bg"]["scale"] - L["scale"]) < 1e-3            # 글자 레이어는 검사용, 배경과 같은 배율
+    sz = preset["safe_zone"]
+    W, H = preset["size"]
+    x1, y1 = L["x"] + 800 * L["scale"], L["y"] + 650 * L["scale"]
+    assert L["x"] >= sz["left"] - 1 and x1 <= W - sz["right"] + 1 and L["y"] >= sz["top"] - 1 and y1 <= H - sz["bottom"] + 1

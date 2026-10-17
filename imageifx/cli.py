@@ -153,8 +153,11 @@ def main():
         workdir = os.path.join(ROOT, "output", name)
         os.makedirs(workdir, exist_ok=True)
         meta = {}
-        clean, layers = decompose.run(src, els, text_mask=style_dict.get("text_mask", "bbox"),
-                                      bg_mode=style_dict.get("background", "crop"), meta=meta)
+        if style_dict.get("layout") == "whole":
+            clean, layers = decompose.run_whole(src, els)
+        else:
+            clean, layers = decompose.run(src, els, text_mask=style_dict.get("text_mask", "bbox"),
+                                          bg_mode=style_dict.get("background", "crop"), meta=meta)
         for wmsg in meta.get("warnings", []):
             print("[경고]", wmsg)
         with open(os.path.join(workdir, "decompose_meta.json"), "w", encoding="utf-8") as f:

@@ -1,0 +1,10 @@
+{
+  "_doc": "사진 위에 글자·붓터치·효과가 얹힌 소재(영월 당일투어 등). 글자를 떼어 내면 사각 패치·번짐이 생기므로 원본 전체를 그대로 두고 균등 축소 + 가장자리만 LaMa 확장한다. 글자 픽셀은 한 장도 바꾸지 않는다. 시험 단계 프로필(baseline 없음).",
+  "layout": "whole",
+  "background": "crop",
+  "scrim": false,
+  "text_v_ratio": 0.0,
+  "fit_ratio": 0.93,
+  "mirror_gap_px": -12,
+  "mirror_src_x0": 780
+}

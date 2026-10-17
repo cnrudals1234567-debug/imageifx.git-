@@ -2,7 +2,7 @@
 import numpy as np
 import cv2
 from PIL import Image
-from . import fill
+from . import fill, occlusion
 from . import spec as _spec
 
 S = _spec.get
@@ -183,9 +183,40 @@ def run(src: Image.Image, elements: list, pad: int = None, text_mask: str = "bbo
             alpha[subj_full[y0:y1, x0:x1] > 0] = 0
         layers[e["id"]] = Image.fromarray(np.dstack([rgb, alpha]), "RGBA")
 
+    # 4) 글자가 인물 뒤에 가려진 곳: 감지는 항상(meta.occlusion), 복원은 요소에 occlusion:"restore"를 준 경우만(규칙 1의 사용자 승인 예외)
+    if subj_full.any():
+        for e in crit:
+            if e["type"] != "text":
+                continue
+            ta_arr = np.asarray(layers[e["id"]])[..., 3]
+            R = occlusion.region(subj_full, e["bbox"], ta_arr)
+            if not R.any():
+                continue
+            info = {"px": int(R.sum()), "choice": e.get("occlusion", "")}
+            if e.get("occlusion") == "restore":
+                layers[e["id"]], info["restored_px"] = occlusion.restore(layers[e["id"]], e["bbox"], R)
+                print(f"[가림 복원] {e['id']}: {info['restored_px']}px")
+            meta.setdefault("occlusion", {})[e["id"]] = info
+
     if bg_mode == "flat":
         _flat_models_and_decor(arr, np.asarray(clean), elements, pad, layers, meta)
     return clean, layers
+
+
+def run_whole(src: Image.Image, elements: list):
+    """원본 통째 유지(layout:whole): 글자를 지우거나 떼어 내지 않는다. clean_bg = 원본 그대로.
+    글자 레이어는 규정 검사(안전영역·최소 크기)용 '유령' 레이어로, 배경에 이미 있는 같은 위치를 가리킬 뿐 합성하지 않는다."""
+    src = src.convert("RGB")
+    arr = np.asarray(src)
+    layers = {}
+    for e in elements:
+        if e["importance"] != "critical" or e["type"] != "text":
+            continue
+        x0, y0, x1, y1 = e["bbox"]
+        a = np.zeros((y1 - y0, x1 - x0), np.uint8)
+        a[1:-1, 1:-1] = 255
+        layers[e["id"]] = Image.fromarray(np.dstack([arr[y0:y1, x0:x1], a]), "RGBA")
+    return src, layers
 
 
 def _flat_clean(arr, elements, bg_mode, meta):
