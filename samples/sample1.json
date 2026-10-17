@@ -1,0 +1,6 @@
+{"elements": [
+ {"id": "headline", "type": "text", "importance": "critical", "bbox": [70, 110, 520, 250]},
+ {"id": "sub", "type": "text", "importance": "critical", "bbox": [70, 245, 640, 320]},
+ {"id": "person", "type": "subject", "importance": "critical", "bbox": [560, 320, 920, 1080]},
+ {"id": "dot", "type": "decor", "importance": "decorative", "bbox": [60, 800, 160, 900]}
+]}

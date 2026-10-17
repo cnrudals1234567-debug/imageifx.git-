@@ -1,0 +1,146 @@
+{
+  "_note": "gfa_1250x560은 docs/gfa_guide.md 기준(2026-10 조사). 안전영역·흰색·배경색 규칙은 단일 출처이므로 광고관리자 등록 화면에서 재확인 필요. gfa_1200x560/google_* 값은 임시.",
+  "gfa_1200x560": {
+    "size": [
+      1200,
+      560
+    ],
+    "mode": "gfa",
+    "safe_margin": {
+      "x": 48,
+      "y": 36
+    },
+    "min_gap": 24,
+    "min_text_height": 22,
+    "max_kb": 1024,
+    "defaults": {
+      "bg_top": 120,
+      "text_scale": 0.78,
+      "person_h": 330,
+      "scrim": true
+    }
+  },
+  "gfa_1250x560": {
+    "size": [
+      1250,
+      560
+    ],
+    "mode": "gfa",
+    "safe_margin": {
+      "x": 240,
+      "y": 50
+    },
+    "min_gap": 24,
+    "min_text_height": 22,
+    "max_kb": 250,
+    "defaults": {
+      "bg_top": 120,
+      "text_scale": 0.78,
+      "person_h": 330,
+      "scrim": true
+    },
+    "formats": [
+      "JPG",
+      "PNG"
+    ],
+    "min_kb": 50,
+    "safe_zone": {
+      "top": 50,
+      "bottom": 35,
+      "left": 240,
+      "right": 240
+    },
+    "white_max": 0.5,
+    "forbidden_bg": "#F2F2F2",
+    "no_edge_fill": true,
+    "text_height_range": [
+      22,
+      52
+    ],
+    "max_text_lines": 4,
+    "max_text_colors": 3,
+    "text_ratio_warn": 0.2,
+    "_guide": "docs/gfa_guide.md (규칙별 신뢰도와 출처)"
+  },
+  "gfa_1200x1200": {
+    "size": [
+      1200,
+      1200
+    ],
+    "mode": "gfa",
+    "safe_margin": {
+      "x": 60,
+      "y": 60
+    },
+    "min_gap": 24,
+    "min_text_height": 22,
+    "max_kb": 1024
+  },
+  "google_1200x628": {
+    "size": [
+      1200,
+      628
+    ],
+    "mode": "free",
+    "safe_margin": {
+      "x": 24,
+      "y": 24
+    },
+    "min_gap": 16,
+    "min_text_height": 22,
+    "max_kb": 5120,
+    "defaults": {
+      "bg_top": 100,
+      "text_scale": 0.85,
+      "person_h": 380,
+      "scrim": true
+    }
+  },
+  "google_1200x1200": {
+    "size": [
+      1200,
+      1200
+    ],
+    "mode": "free",
+    "safe_margin": {
+      "x": 24,
+      "y": 24
+    },
+    "min_gap": 16,
+    "min_text_height": 22,
+    "max_kb": 5120
+  },
+  "google_960x1200": {
+    "size": [
+      960,
+      1200
+    ],
+    "mode": "free",
+    "safe_margin": {
+      "x": 24,
+      "y": 24
+    },
+    "min_gap": 16,
+    "min_text_height": 22,
+    "max_kb": 5120
+  },
+  "google_1080x1920": {
+    "size": [
+      1080,
+      1920
+    ],
+    "mode": "free",
+    "safe_margin": {
+      "x": 24,
+      "y": 24
+    },
+    "min_gap": 16,
+    "min_text_height": 22,
+    "max_kb": 5120,
+    "defaults": {
+      "text_top": 700,
+      "text_up": 1.4,
+      "person_up": 1.1
+    }
+  }
+}

@@ -1,0 +1,112 @@
+{
+ "bg": {
+  "scale": 1.0416666666666667,
+  "x": 0,
+  "y": -125
+ },
+ "layers": [
+  {
+   "id": "person",
+   "type": "subject",
+   "importance": "critical",
+   "src_bbox": [
+    30,
+    650,
+    600,
+    1202
+   ],
+   "scale": 0.5978,
+   "x": 152,
+   "y": 230,
+   "bleed": [
+    "bottom"
+   ]
+  },
+  {
+   "id": "school",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    685,
+    728,
+    1020,
+    762
+   ],
+   "scale": 0.78,
+   "x": 630,
+   "y": 123
+  },
+  {
+   "id": "headline",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    662,
+    770,
+    1152,
+    975
+   ],
+   "scale": 0.78,
+   "x": 612,
+   "y": 156
+  },
+  {
+   "id": "tagline",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    665,
+    985,
+    1078,
+    1032
+   ],
+   "scale": 0.78,
+   "x": 614,
+   "y": 323
+  },
+  {
+   "id": "recruit",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    665,
+    1042,
+    1152,
+    1098
+   ],
+   "scale": 0.78,
+   "x": 614,
+   "y": 368
+  },
+  {
+   "id": "period",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    662,
+    1100,
+    1152,
+    1150
+   ],
+   "scale": 0.78,
+   "x": 612,
+   "y": 413
+  }
+ ],
+ "scrim": {
+  "box": [
+   572,
+   83,
+   1034,
+   492
+  ],
+  "alpha": 0.95,
+  "feather": 36
+ },
+ "preset": "gfa_1250x560",
+ "canvas": [
+  1250,
+  560
+ ],
+ "name": "real1_gfa_1250x560"
+}

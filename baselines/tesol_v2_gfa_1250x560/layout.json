@@ -1,0 +1,177 @@
+{
+ "bg": {
+  "scale": 1.0416666666666667,
+  "x": 0,
+  "y": -667
+ },
+ "layers": [
+  {
+   "id": "owl",
+   "type": "subject",
+   "importance": "critical",
+   "src_bbox": [
+    18,
+    605,
+    676,
+    1200
+   ],
+   "scale": 0.7128,
+   "x": 24,
+   "y": 136,
+   "bleed": [
+    "bottom"
+   ]
+  },
+  {
+   "id": "school",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    320,
+    119,
+    962,
+    185
+   ],
+   "scale": 0.4789,
+   "x": 590,
+   "y": 89
+  },
+  {
+   "id": "recruit",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    360,
+    193,
+    948,
+    282
+   ],
+   "scale": 0.4789,
+   "x": 609,
+   "y": 124
+  },
+  {
+   "id": "headline",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    168,
+    302,
+    1164,
+    632
+   ],
+   "scale": 0.4789,
+   "x": 517,
+   "y": 177
+  },
+  {
+   "id": "date",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    428,
+    648,
+    1142,
+    718
+   ],
+   "scale": 0.4789,
+   "x": 585,
+   "y": 342
+  },
+  {
+   "id": "cta",
+   "type": "text",
+   "importance": "critical",
+   "src_bbox": [
+    640,
+    745,
+    1002,
+    948
+   ],
+   "scale": 0.4789,
+   "x": 669,
+   "y": 389
+  },
+  {
+   "id": "eraser",
+   "type": "decor",
+   "importance": "movable",
+   "src_bbox": [
+    898,
+    1090,
+    1132,
+    1156
+   ],
+   "scale": 1.0417,
+   "x": 935,
+   "y": 468,
+   "placement": "in_place"
+  },
+  {
+   "id": "abc",
+   "type": "decor",
+   "importance": "movable",
+   "src_bbox": [
+    1028,
+    150,
+    1150,
+    272
+   ],
+   "scale": 0.65,
+   "x": 1068,
+   "y": 12,
+   "placement": "relocated"
+  },
+  {
+   "id": "star",
+   "type": "decor",
+   "importance": "movable",
+   "src_bbox": [
+    88,
+    195,
+    185,
+    300
+   ],
+   "scale": 0.65,
+   "x": 92,
+   "y": 12,
+   "placement": "relocated"
+  },
+  {
+   "id": "chalk_y",
+   "type": "decor",
+   "importance": "movable",
+   "src_bbox": [
+    808,
+    1114,
+    880,
+    1154
+   ],
+   "scale": 0.65,
+   "x": 588,
+   "y": 493,
+   "placement": "relocated"
+  },
+  {
+   "id": "chalk_w",
+   "type": "decor",
+   "importance": "movable",
+   "src_bbox": [
+    734,
+    1120,
+    812,
+    1152
+   ],
+   "scale": 0.4225,
+   "x": 524,
+   "y": 500,
+   "placement": "relocated"
+  }
+ ],
+ "preset": "gfa_1250x560",
+ "canvas": [
+  1250,
+  560
+ ],
+ "name": "tesol_v2_gfa_1250x560"
+}

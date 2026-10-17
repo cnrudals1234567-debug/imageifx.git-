@@ -1,0 +1,125 @@
+{
+ "elements": [
+  {
+   "id": "school",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    320,
+    125,
+    962,
+    185
+   ]
+  },
+  {
+   "id": "recruit",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    360,
+    205,
+    948,
+    282
+   ]
+  },
+  {
+   "id": "headline",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    168,
+    305,
+    1140,
+    632
+   ]
+  },
+  {
+   "id": "date",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    428,
+    648,
+    1142,
+    718
+   ]
+  },
+  {
+   "id": "cta",
+   "type": "text",
+   "importance": "critical",
+   "bbox": [
+    676,
+    745,
+    1002,
+    948
+   ]
+  },
+  {
+   "id": "owl",
+   "type": "subject",
+   "importance": "critical",
+   "bbox": [
+    18,
+    605,
+    676,
+    1200
+   ]
+  },
+  {
+   "id": "star",
+   "type": "decor",
+   "importance": "movable",
+   "bbox": [
+    88,
+    195,
+    185,
+    300
+   ]
+  },
+  {
+   "id": "abc",
+   "type": "decor",
+   "importance": "movable",
+   "bbox": [
+    1028,
+    150,
+    1150,
+    272
+   ]
+  },
+  {
+   "id": "eraser",
+   "type": "decor",
+   "importance": "movable",
+   "bbox": [
+    898,
+    1090,
+    1132,
+    1156
+   ]
+  },
+  {
+   "id": "chalk_w",
+   "type": "decor",
+   "importance": "movable",
+   "bbox": [
+    734,
+    1120,
+    812,
+    1152
+   ]
+  },
+  {
+   "id": "chalk_y",
+   "type": "decor",
+   "importance": "movable",
+   "bbox": [
+    808,
+    1114,
+    880,
+    1154
+   ]
+  }
+ ]
+}

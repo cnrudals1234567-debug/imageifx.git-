@@ -1,0 +1,2 @@
+49712440f29e3c647ac95772b053f1ee *baselines/real1_gfa_1250x560/real1_gfa_1250x560.jpg
+82abb678fd0002b76fbc4181b6da5a4f *baselines/tesol_v2_gfa_1250x560/tesol_v2_gfa_1250x560.jpg
