@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block body %}
+<div class="card"><h1>새 소재 변환</h1>
+<p class="mut">이미지 1장을 올리면 요소를 자동 분석한 뒤 선택한 매체 사이즈로 변환합니다. 글자는 다시 그리지 않고 이동·균등 축소만 합니다. 분석과 수정에는 Claude 토큰이 사용됩니다.</p>
+<form method="post" action="/jobs" enctype="multipart/form-data">
+<p><input type="file" name="image" accept="image/png,image/jpeg,image/webp" required></p>
+<p><b>변환할 사이즈</b><br>
+{% for k,v in presets.items() %}<label class="chk"><input type="checkbox" name="presets" value="{{k}}" {% if k==default %}checked{% endif %}>{{k}} ({{v.size[0]}}×{{v.size[1]}})</label>{% endfor %}</p>
+<p><label class="chk"><input type="checkbox" name="confirm" value="1">분석 결과(bbox)를 확인한 뒤 실행 (잘못된 분석으로 LaMa 수 분을 낭비하지 않음)</label></p>
+<button>업로드하고 시작</button></form></div>
+{% if recent %}<div class="card"><h2>최근 작업</h2><table>{% for j in recent %}<tr><td><a href="/jobs/{{j.id}}">{{j.id}}</a></td><td>{{j.filename}}</td><td>{{j.status}}</td></tr>{% endfor %}</table></div>{% endif %}
+{% endblock %}

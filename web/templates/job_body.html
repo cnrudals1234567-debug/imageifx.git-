@@ -1,0 +1,51 @@
+{% set labels={'queued':'대기','analyzing':'분석 중','awaiting_confirm':'확인 대기','running':'변환 중','fixing':'수정 중','done':'완료','failed':'실패'} %}
+<div class="card" {% if active %}data-active="1"{% endif %}>
+<span class="badge {% if job.status=='failed' %}bad{% elif job.status=='done' %}ok{% endif %}">{{ labels.get(job.status, job.status) }}</span>
+<b>{{ job.stage }}</b>{% if job.error %}<div class="bad">{{ job.error }}</div>{% endif %}
+{% if job.style %}<div class="mut">스타일: {{ job.style }} · 사이즈: {{ job.presets|join(', ') }}</div>{% endif %}
+{% if job.status=='awaiting_confirm' %}<form method="post" action="/jobs/{{job.id}}/start"><p>원본 위의 박스가 요소 분석입니다(빨강=필수 글자·인물). 맞으면 실행하세요.</p><button>이대로 실행</button></form>{% endif %}
+</div>
+
+<div class="card"><h2>토큰 사용량 <span class="mut">(이 작업 합계 {{ total.total|n }} 토큰 · 입력 {{ total.input|n }} · 출력 {{ total.output|n }} · 캐시 생성 {{ total.cache_creation|n }} · 캐시 읽기 {{ total.cache_read|n }})</span></h2>
+{% if job.usage %}<table><tr><th>시각</th><th>단계</th><th class="r">입력</th><th class="r">출력</th><th class="r">캐시 생성</th><th class="r">캐시 읽기</th><th class="r">참고 비용(USD)</th></tr>
+{% for u in job.usage %}<tr><td>{{u.time}}</td><td>{{ '분석' if u.kind=='analyze' else '수정' }}</td><td class="r">{{u.input|n}}</td><td class="r">{{u.output|n}}</td><td class="r">{{u.cache_creation|n}}</td><td class="r">{{u.cache_read|n}}</td><td class="r">{{u.cost_usd}}</td></tr>{% endfor %}</table>
+<p class="mut">비용은 API 가격으로 환산한 참고값입니다. 구독으로 실행 중이면 실제 청구액이 아닙니다. 변환(LaMa)은 토큰을 쓰지 않습니다.</p>{% else %}<span class="mut">아직 에이전트를 실행하지 않았습니다.</span>{% endif %}</div>
+
+{% if job.style %}
+<div class="card"><h2>요소 분석</h2><div class="imgs"><a href="/jobs/{{job.id}}/files/_jobs/{{job.id}}/analysis_preview.png"><img src="/jobs/{{job.id}}/files/_jobs/{{job.id}}/analysis_preview.png" alt="분석 박스"></a></div></div>{% endif %}
+
+{% for p, r in job.results.items() %}
+<div class="card"><h2>{{p}}</h2>
+{% if r.error %}<div class="bad">{{ r.error }}</div>{% else %}
+{% if r.fails %}<div class="banner">규정 FAIL {{r.fails}}건 — 최종본이 아닙니다. 아래 표를 확인하고 수정 요청을 하세요.</div>{% endif %}
+<p>자체 규정 검사: FAIL {{r.fails}} · WARN {{r.warns}} · 용량 {{r.size_kb}}KB <span class="mut">(광고관리자 실제 검수 통과를 보장하지 않습니다. 반드시 이미지를 직접 확인하세요.)</span></p>
+<div class="imgs">
+<a href="/jobs/{{job.id}}/files/{{r.final}}"><img src="/jobs/{{job.id}}/files/{{r.final}}?v={{ r.size_kb }}" alt="최종"></a>
+<a href="/jobs/{{job.id}}/files/{{r.workdir}}/debug.png"><img src="/jobs/{{job.id}}/files/{{r.workdir}}/debug.png" alt="안전영역"></a>
+<a href="/jobs/{{job.id}}/files/{{r.workdir}}/compare.png"><img src="/jobs/{{job.id}}/files/{{r.workdir}}/compare.png" alt="원본 대 결과"></a></div>
+<p><a class="btn sec" href="/jobs/{{job.id}}/files/{{r.final}}?download=1">다운로드</a></p>
+<details {% if r.fails or r.warns %}open{% endif %}><summary>검사 결과 표</summary>
+<table class="rep">{% for row in reports.get(p, []) %}<tr><td class="{{ 'f' if not row.ok else ('w' if row.warn else '') }}">{{ 'FAIL' if not row.ok else ('WARN' if row.warn else 'PASS') }}</td><td>{{row.check}}</td><td>{{row.detail}}</td></tr>{% endfor %}</table></details>
+{% if can_fix and not active %}
+<form method="post" action="/jobs/{{job.id}}/fix"><input type="hidden" name="preset" value="{{p}}">
+<p><b>수정 요청</b> <span class="mut">비워 두면 에이전트가 FAIL/WARN과 눈에 보이는 결함을 스스로 찾아 고칩니다. 토큰이 사용됩니다.</span></p>
+<textarea name="request" maxlength="1000" placeholder="예: 로고가 잘려요 / 글자를 조금 더 왼쪽으로"></textarea>
+<p><button>수정 요청</button></p></form>
+{% elif why and not active %}<p class="warn">{{ why }}</p>{% endif %}
+{% endif %}
+{% for fx in job.fixes if fx.preset==p %}
+<div class="card"><b>수정 {{fx.n}}회차</b> <span class="badge">{{ fx.status }}</span>{% if fx.reverted %} <span class="badge warn">되돌림</span>{% endif %}
+<div class="mut">{{fx.time}} · 요청: {{ fx.request or '(자동)' }}</div>
+{% if fx.error %}<div class="bad">{{fx.error}}</div>{% endif %}{% if fx.warning %}<div class="banner">{{fx.warning}}</div>{% endif %}
+{% if fx.status=='done' %}
+<div class="imgs"><div><div class="mut">수정 전</div><img src="/jobs/{{job.id}}/files/{{fx.before_snap}}/{{ fx.before.final.split('/')[-1] }}" alt="전"></div>
+<div><div class="mut">수정 후</div><img src="/jobs/{{job.id}}/files/{{fx.after.final}}?v={{fx.after.size_kb}}" alt="후"></div></div>
+<p>FAIL {{fx.before.fails}} → {{fx.after.fails}} · WARN {{fx.before.warns}} → {{fx.after.warns}}</p>
+{% if fx.report.notes %}<p>{{ fx.report.notes }}</p>{% endif %}
+{% if fx.report.changes %}<table><tr><th>요소</th><th>항목</th><th>이전</th><th>이후</th><th>이유</th></tr>{% for c in fx.report.changes %}<tr><td>{{c.id}}</td><td>{{c.field}}</td><td>{{c.before}}</td><td>{{c.after}}</td><td>{{c.why}}</td></tr>{% endfor %}</table>{% endif %}
+{% if fx.report.remaining_fail %}<p class="bad">남은 FAIL: {{ fx.report.remaining_fail|join(', ') }}</p>{% endif %}
+{% if loop.last and not fx.reverted and not active %}<form method="post" action="/jobs/{{job.id}}/revert"><input type="hidden" name="preset" value="{{p}}"><input type="hidden" name="n" value="{{fx.n}}"><button class="sec">이전 버전으로 되돌리기</button></form>{% endif %}
+{% endif %}</div>{% endfor %}
+</div>{% endfor %}
+
+<div class="card"><h2>진행 로그</h2><pre class="log">{{ job.log[-40:]|join('\n') }}</pre></div>
