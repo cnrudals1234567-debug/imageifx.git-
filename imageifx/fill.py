@@ -97,7 +97,7 @@ def mirror_right(canvas: Image.Image, covered: np.ndarray, y_from: int, x_min: i
     return Image.fromarray(a), filled
 
 
-def sky_right(canvas: Image.Image, covered: np.ndarray, y_to: int, cols=60, seed=7):
+def sky_right(canvas: Image.Image, covered: np.ndarray, y_to: int, cols=60, seed=7, cloud_cols=34, cloud_stretch=2.2):
     """오른쪽 확장의 y_to 위쪽(하늘)을 AI 대신 하늘 색 모델로 채운다. AI 채움은 하늘에서 단계마다 세로 줄무늬(물결 결)가 생긴다.
     행마다 원본 오른쪽 가장자리 cols 열의 중앙값(구름·반짝이는 이상치 제외)을 하늘색 프로필로 쓰고, 경계 색 차이는 멀어질수록 사라지게 이어 붙이며,
     원본 하늘의 입자(고주파 잡음)와 아주 완만한 밝기 변화를 더해 밋밋한 면이 되지 않게 한다. (채운 canvas, 채운 곳 mask) 반환."""
@@ -130,10 +130,16 @@ def sky_right(canvas: Image.Image, covered: np.ndarray, y_to: int, cols=60, seed
     d = cv2.GaussianBlur(d.reshape(-1, 1, 3), (1, 0), sigmaX=0.1, sigmaY=10).reshape(-1, 3)
     ramp = np.exp(-np.arange(n) / 90.0)[None, :, None]
     out += d[:, None, :] * ramp
-    big = a[:y_to, c1 - 1] - prof - d                                 # 구름처럼 큰 차이는 짧게(약 20px) 번지며 사라져 구름이 칼로 자른 듯 끝나지 않게
-    big[:first] = 0
-    big = cv2.GaussianBlur(big.reshape(-1, 1, 3), (1, 0), sigmaX=0.1, sigmaY=5).reshape(-1, 3)
-    out += big[:, None, :] * np.exp(-np.arange(n) / 20.0)[None, :, None]
+    # 가장자리에 걸린 구름: 가장자리 기준 좌우 대칭으로 이어 붙이되 가로로 늘려(구름은 옆으로 길게 퍼지므로) 모양이 끝나며 사라지게 한다.
+    # 한 줄을 번지게 하면 가로 줄이 생기고, 같은 폭을 그대로 뒤집으면 복제 조각이 되어 보이기 때문
+    nm = min(cloud_cols, c1 - c0)
+    res = (a[:y_to, c1 - nm:c1][:, ::-1] - (prof + d)[:, None, :]).astype(np.float32)   # k=0이 가장자리
+    res[:first] = 0
+    res *= np.clip((res.mean(-1, keepdims=True) - 6) / 10, 0, 1)                 # 하늘보다 확실히 밝은 곳(구름)만
+    wd = min(n, int(round(nm * cloud_stretch)))
+    res = cv2.resize(res, (wd, y_to), interpolation=cv2.INTER_CUBIC)
+    res = cv2.GaussianBlur(res, (0, 0), 1.2)
+    out[:, :wd] += res * (np.cos(np.pi / 2 * np.arange(wd) / wd) ** 2)[None, :, None]
     rng = np.random.default_rng(seed)
     lo = rng.normal(0, 1, (max(2, y_to // 80), max(2, n // 80), 3)).astype(np.float32)   # 아주 완만한 밝기 변화(±1.5 안팎)
     out += cv2.resize(lo, (n, y_to), interpolation=cv2.INTER_CUBIC) * 1.5
