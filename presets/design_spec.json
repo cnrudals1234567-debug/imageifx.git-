@@ -59,7 +59,8 @@
       "dilate_px": 4,
       "alpha_floor": 30,
       "alpha_span": 90
-    }
+    },
+    "flat_fast": true
   },
   "compose": {
     "extend_rows": {

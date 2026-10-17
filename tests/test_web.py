@@ -132,6 +132,8 @@ def env(tmp_path, monkeypatch):
             else:
                 worker._fail(t["job"], f"{type(ex).__name__}: {ex}", fix_n=t.get("n"))
     monkeypatch.setattr(worker, "enqueue", run_sync)
+    e.real_flat = fixer.flat_hint
+    monkeypatch.setattr(fixer, "flat_hint", lambda *a, **k: {"flat": False, "inlier": 0.1, "resid": 30.0})   # 기본은 사진 배경으로 본다
     e.real_auto = worker._auto_tune_new
     monkeypatch.setattr(worker, "_auto_tune_new", lambda jid, presets: None)   # 기본은 끔(처음 FAIL 상태를 검증하기 위해)
     e.monkeypatch = monkeypatch
@@ -479,3 +481,18 @@ def test_auto_tune_skips_clean_results(client, env, monkeypatch):
         TITLE_X[0] = 10
     j = store.load(jid)
     assert j["results"][PRESET]["fails"] == 0 and j["fixes"] == []
+
+
+def test_flat_background_hint_and_auto_switch(client, env):
+    # 균일한 색 이미지는 단색 배경이다. 분석이 dark_board여도 확인 화면은 bold_solid를 권장하고, 확인을 끄면 자동으로 바꾼다.
+    env.monkeypatch.setattr(fixer, "flat_hint", env.real_flat)
+    jid = upload(client, confirm="1", color=(120, 130, 200))
+    j = store.load(jid)
+    assert j["status"] == "awaiting_confirm" and j["style_hint"] == "bold_solid" and j["style"] == "dark_board"
+    page = client.get(f"/jobs/{jid}").text
+    assert "배경이 단색에 가깝습니다" in page and "(권장)" in page
+    jid2 = upload(client, confirm="", color=(120, 130, 201))
+    j2 = store.load(jid2)
+    assert j2["style"] == "bold_solid" and j2["style_hint"] == "" and j2["status"] == "done"
+    with open(os.path.join(store.job_dir(jid2), "analysis.json"), encoding="utf-8") as f:
+        assert json.load(f)["style"] == "bold_solid"

@@ -143,7 +143,15 @@ def do_analyze(t):
     with open(out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     fixer.draw_preview(src, data, os.path.join(store.job_dir(jid), "analysis_preview.png"))
-    store.update(jid, lambda j: j.update(style=data["style"]))
+    # 배경이 단색인데 단색 스타일이 아니면 LaMa로 메운 번짐이 결과에 남는다 -> 스타일을 점검한다(토큰 0)
+    flat = fixer.flat_hint(src, data)
+    hint = "bold_solid" if flat["flat"] and data["style"] != "bold_solid" else ""
+    if hint and not job.get("confirm"):
+        store.log(jid, f"배경이 단색(일치율 {flat['inlier']:.0%})이라 스타일을 {data['style']} -> {hint}로 자동 변경")
+        data["style"], hint = "bold_solid", ""
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+    store.update(jid, lambda j: j.update(style=data["style"], style_hint=hint, flat=flat))
     if job.get("confirm"):
         _stage(jid, "awaiting_confirm", "분석 완료: 확인 후 '실행'을 눌러 주세요")
     else:

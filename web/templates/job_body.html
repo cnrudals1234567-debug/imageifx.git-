@@ -6,8 +6,9 @@
 {% if job.status=='awaiting_confirm' %}
 <p>원본 위의 박스가 요소 분석입니다(빨강=필수 글자·인물, 파랑=재배치 장식, 초록=장식 부품, 주황=띠). <b>스타일이 소재와 맞는지, 글자·인물 박스가 맞는지 확인하세요.</b> 스타일이 틀리면 결과 디자인이 크게 나빠집니다.</p>
 <a href="/jobs/{{job.id}}/files/_jobs/{{job.id}}/analysis_preview.png"><img src="/jobs/{{job.id}}/files/_jobs/{{job.id}}/analysis_preview.png" alt="분석 박스" style="max-width:640px;width:100%;border:1px solid var(--bd);border-radius:6px"></a>
+{% if job.style_hint %}<div class="banner" style="border-color:var(--warn);color:var(--warn)">배경이 단색에 가깝습니다(일치율 {{ '%.0f'|format(job.flat.inlier*100) }}%). 분석은 {{job.style}}로 골랐지만 <b>{{job.style_hint}}</b>가 맞을 가능성이 큽니다 — 스타일이 틀리면 글자를 지운 자리에 흐릿한 번짐이 남습니다.</div>{% endif %}
 <form method="post" action="/jobs/{{job.id}}/start" style="margin-top:10px"><label>스타일 <select name="style" style="width:auto">
-{% for n, doc in style_docs %}<option value="{{n}}" {% if n==job.style %}selected{% endif %}>{{n}}</option>{% endfor %}</select></label>
+{% for n, doc in style_docs %}<option value="{{n}}" {% if n==(job.style_hint or job.style) %}selected{% endif %}>{{n}}{% if n==job.style_hint %} (권장){% endif %}</option>{% endfor %}</select></label>
 <ul class="mut">{% for n, doc in style_docs %}<li><b>{{n}}</b> — {{doc}}</li>{% endfor %}</ul>
 <button>이대로 실행 (LaMa, 토큰 0)</button></form>
 <form method="post" action="/jobs/{{job.id}}/reanalyze" style="margin-top:10px"><textarea name="note" maxlength="500" placeholder="다시 분석할 때 알려줄 내용(선택). 예: 배경은 단색 주황이고 왼쪽 위 큰 글자 A는 워터마크 장식이야"></textarea>

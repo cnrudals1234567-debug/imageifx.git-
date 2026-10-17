@@ -74,6 +74,27 @@ def validate_analysis(data, size):
     return errs
 
 
+FLAT_MIN_INLIER = 0.9    # 배경 픽셀의 이만큼이 색 모델에 들어맞아야 '단색 배경'으로 본다(칠판 질감 0.7, 사진 0.04, 단색 0.99)
+FLAT_MAX_RESID = 4.5
+
+
+def flat_hint(src_path, analysis):
+    """요소 밖 배경이 단색·완만한 그라데이션인지 계산한다(토큰 0). {"flat": bool, "inlier": 비율, "resid": 잔차}."""
+    import numpy as np
+    from imageifx import background as bgm
+    arr = np.asarray(Image.open(src_path).convert("RGB"))
+    h, w = arr.shape[:2]
+    occ = np.zeros((h, w), bool)
+    for e in analysis.get("elements", []):
+        if e.get("importance") in ("critical", "movable", "decor", "band"):
+            x0, y0, x1, y1 = [int(v) for v in e["bbox"]]
+            occ[max(0, y0 - 6):y1 + 6, max(0, x0 - 6):x1 + 6] = True
+    m = bgm.fit_flat(arr, ~occ, deg=1)
+    if not m:
+        return {"flat": False, "inlier": 0.0, "resid": 99.0}
+    return {"flat": m["inlier"] >= FLAT_MIN_INLIER and m["resid"] <= FLAT_MAX_RESID, "inlier": m["inlier"], "resid": m["resid"]}
+
+
 def make_small(src, out):
     """에이전트용 축소본을 저장하고 (원본/축소본) 배율을 돌려준다. 이미 작으면 그대로 복사."""
     im = Image.open(src).convert("RGB")

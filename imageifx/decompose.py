@@ -149,7 +149,9 @@ def run(src: Image.Image, elements: list, pad: int = None, text_mask: str = "bbo
     for e in elements:
         if e["importance"] == "drop":
             mask |= _bbox_mask(arr.shape, [e["bbox"]], pad)
-    clean = fill.inpaint(src, mask)
+    clean = _flat_clean(arr, elements, bg_mode, meta)   # 단색 배경 소재: 색 모델로 바로 만든다(LaMa 생략, 몇 초)
+    if clean is None:
+        clean = fill.inpaint(src, mask)
 
     # 피사체 영역(원본 위치)은 글자 레이어에서 제외: 겹친 bbox에서 피사체 픽셀이 글자로 딸려오는 것 방지
     subj_full = np.zeros(arr.shape[:2], np.uint8)
@@ -184,6 +186,35 @@ def run(src: Image.Image, elements: list, pad: int = None, text_mask: str = "bbo
     if bg_mode == "flat":
         _flat_models_and_decor(arr, np.asarray(clean), elements, pad, layers, meta)
     return clean, layers
+
+
+def _flat_clean(arr, elements, bg_mode, meta):
+    """bg_mode=flat 이고 장식(decor)이 없으면, 글자·인물을 지운 '클린 배경'을 LaMa 대신 배경 색 모델로 만든다.
+    단색·그라데이션 배경에서는 글자 알파(원본-클린 차이)와 최종 배경이 모두 색 모델로 충분하기 때문이다.
+    모델이 맞지 않거나(사진 배경) 띠 모델을 못 만들면 None -> 기존처럼 LaMa. meta['flat_fast']에 기록한다."""
+    if bg_mode != "flat" or not S("decompose.flat_fast") or any(e["importance"] == "decor" for e in elements):
+        return None
+    from . import background as bgm
+    h, w = arr.shape[:2]
+    fp = S("background.fit_pad_px")
+    occ = _bbox_mask(arr.shape, [e["bbox"] for e in elements if e.get("bbox")], fp)
+    model = bgm.fit_flat(arr, occ == 0, deg=S("background.flat_deg"))
+    if model is None or model["resid"] > S("background.flat_max_resid") or model["inlier"] < S("background.flat_min_inlier"):
+        return None
+    out = np.asarray(bgm.render_flat(model, w, h)).copy()
+    texts = [e["bbox"] for e in elements if e["type"] == "text"]
+    for e in elements:
+        if e["importance"] == "band" and e.get("fill", "flat") == "flat":
+            x0, y0, x1, y1 = e["bbox"]
+            use = np.zeros((h, w), bool)
+            use[y0:y1, x0:x1] = True
+            use &= _bbox_mask(arr.shape, texts, fp) == 0
+            bm = bgm.fit_flat(arr, use, deg=S("background.flat_deg"), region=e["bbox"])
+            if bm is None:
+                return None
+            out[y0:y1, x0:x1] = np.asarray(bgm.render_flat(bm, x1 - x0, y1 - y0))
+    meta["flat_fast"] = True
+    return Image.fromarray(out, "RGB")
 
 
 def _flat_models_and_decor(arr, carr, elements, pad, layers, meta):
