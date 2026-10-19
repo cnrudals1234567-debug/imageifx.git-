@@ -30,6 +30,14 @@ def _extend_rows(canvas: Image.Image, rows) -> Image.Image:
     return Image.fromarray(a)
 
 
+def _tint_white(img: Image.Image, color, ratio):
+    """밝기 225~250 구간의 흰색에 가까운 픽셀을 color 쪽으로 ratio만큼 섞는다. 어두운 글자·살색 등은 거의 그대로."""
+    a = np.asarray(img.convert("RGB")).astype(np.float32)
+    w = np.clip((a.min(axis=2) - 225.0) / 25.0, 0, 1)[..., None] * ratio
+    out = a * (1 - w) + np.array(color, np.float32) * w
+    return Image.fromarray(np.clip(out + 0.5, 0, 255).astype(np.uint8))
+
+
 def build_bg(clean: Image.Image, layout, cache_dir=None):
     W, H = layout["canvas"]
     b = layout["bg"]
@@ -82,6 +90,9 @@ def build_bg(clean: Image.Image, layout, cache_dir=None):
             r = tint["ratio"]
             strip = Image.blend(strip.convert("RGB"), Image.new("RGB", strip.size, tuple(tint["color"])), r)
         canvas.paste(strip, (0, H - band["h"]))
+    wt = b.get("white_tint")   # 거의 흰 배경이 '흰색 면적' 규칙에 걸릴 때: 흰색에 가까운 픽셀만 연한 색으로 물들임(옵션, 기본 없음)
+    if wt:
+        canvas = _tint_white(canvas, wt["color"], wt["ratio"])
     if cpath:
         canvas.save(cpath)
     return canvas

@@ -187,7 +187,7 @@ def auto_gfa(elements, src_size, preset, text_side="left", bg_top=None,
     return layout
 
 
-def auto_whole(elements, src_size, preset, text_v_ratio=None, fit_ratio=1.0, mirror_gap_px=None, mirror_src_x0=0, sky_right=False, **_):
+def auto_whole(elements, src_size, preset, text_v_ratio=None, fit_ratio=1.0, mirror_gap_px=None, mirror_src_x0=0, sky_right=False, align_x="text_left", white_tint=None, **_):
     """원본 통째 유지: 글자를 떼지 않고 원본 전체를 균등 축소해 글자 묶음이 안전영역에 들어가게 하고, 모자라는 가장자리는 배경 확장(LaMa)으로 채운다.
     글자 레이어는 검사용(ghost)이며 합성되지 않는다."""
     W, H = preset["size"]
@@ -200,6 +200,10 @@ def auto_whole(elements, src_size, preset, text_v_ratio=None, fit_ratio=1.0, mir
     uw, uh = u[2] - u[0], u[3] - u[1]
     s = min((sx1 - sx0) / uw, (sy1 - sy0) / uh) * fit_ratio     # fit_ratio<1: 안전영역을 다 채우지 않고 더 작게(원본이 더 많이 보임)
     bx = int(round(sx0 - u[0] * s))                                    # 글자 묶음의 왼쪽을 안전영역 왼쪽에 붙여 좌측 확장을 최소로
+    if align_x == "text_right":      # 글자 묶음의 오른쪽을 안전영역 오른쪽에 붙임(인물이 왼쪽 가장자리에 걸린 가로형 소재)
+        bx = int(round(sx1 - u[2] * s))
+    elif align_x == "flush_right":   # 원본 오른쪽 끝을 캔버스 오른쪽 끝에 붙임(글자는 안전영역 안에 있어야 하므로 그 범위로 제한)
+        bx = max(int(round(sx0 - u[0] * s)), min(W - int(round(sw * s)), int(round(sx1 - u[2] * s))))
     vr = 0.5 if text_v_ratio is None else text_v_ratio
     by = int(round(sy0 + ((sy1 - sy0) - uh * s) * vr - u[1] * s))
     layers = []
@@ -208,6 +212,8 @@ def auto_whole(elements, src_size, preset, text_v_ratio=None, fit_ratio=1.0, mir
         layers.append({"id": e["id"], "type": "text", "importance": "critical", "src_bbox": b, "scale": round(s, 4),
                        "x": int(round(bx + b[0] * s)), "y": int(round(by + b[1] * s)), "ghost": True})
     bg = {"scale": s, "x": bx, "y": by, "outpaint": "progressive"}
+    if white_tint:
+        bg["white_tint"] = white_tint
     if mirror_gap_px is not None:   # 마지막 글자 아래 이만큼부터는 풍경이므로 오른쪽 확장을 원본 반사로 채운다
         bg["mirror_below_src_y"] = u[3] + mirror_gap_px
         bg["mirror_src_x0"] = mirror_src_x0
@@ -318,7 +324,8 @@ def build(elements, src_size, preset, style_dict=None, overrides=None, style_nam
         lay = auto_stack(elements, src_size, preset, **preset.get("stack", {}))
     elif (style_dict or {}).get("layout") == "whole" and kind != "free":
         lay = auto_whole(elements, src_size, preset, text_v_ratio=opts["text_v_ratio"], fit_ratio=style_dict.get("fit_ratio", 1.0),
-                         mirror_gap_px=style_dict.get("mirror_gap_px"), mirror_src_x0=style_dict.get("mirror_src_x0", 0), sky_right=style_dict.get("sky_right", False))
+                         mirror_gap_px=style_dict.get("mirror_gap_px"), mirror_src_x0=style_dict.get("mirror_src_x0", 0), sky_right=style_dict.get("sky_right", False),
+                         align_x=style_dict.get("align_x", "text_left"), white_tint=style_dict.get("white_tint"))
     elif kind == "free" and W / H < 1.3:
         lay = auto_free(elements, src_size, preset)
     else:

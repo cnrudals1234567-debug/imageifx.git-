@@ -1,0 +1,6 @@
+{"style": "photo_whole_white", "elements": [
+ {"id": "headline", "type": "text", "importance": "critical", "bbox": [60, 135, 980, 515]},
+ {"id": "sub", "type": "text", "importance": "critical", "bbox": [110, 515, 915, 605]},
+ {"id": "period", "type": "text", "importance": "critical", "bbox": [110, 635, 855, 740]},
+ {"id": "footer", "type": "text", "importance": "critical", "bbox": [75, 760, 725, 900]}
+]}

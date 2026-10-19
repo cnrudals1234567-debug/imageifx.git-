@@ -1,0 +1,7 @@
+{"style": "photo_whole_wide_left", "elements": [
+ {"id": "headline", "type": "text", "importance": "critical", "bbox": [595, 60, 1510, 440]},
+ {"id": "sub", "type": "text", "importance": "critical", "bbox": [700, 395, 1570, 520]},
+ {"id": "date", "type": "text", "importance": "critical", "bbox": [885, 485, 1245, 585]},
+ {"id": "price", "type": "text", "importance": "critical", "bbox": [1205, 450, 1690, 765]},
+ {"id": "cta", "type": "text", "importance": "critical", "bbox": [1255, 760, 1685, 855]}
+]}

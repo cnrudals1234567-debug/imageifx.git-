@@ -1,0 +1,9 @@
+{
+  "_doc": "가로형(16:9) 사진 소재, 인물이 왼쪽 가장자리에 걸려 글자 묶음을 오른쪽 안전영역 끝에 붙인다(옥수수런). 시험 단계 프로필(baseline 없음).",
+  "layout": "whole",
+  "background": "crop",
+  "scrim": false,
+  "text_v_ratio": 0.5,
+  "fit_ratio": 1.0,
+  "align_x": "text_right"
+}
